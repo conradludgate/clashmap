@@ -22,7 +22,7 @@ pub fn map_in_place_2<T, U, F: FnOnce(U, T) -> T>((k, v): (U, &mut T), f: F) {
 ///
 /// Requires that you ensure the reference does not become invalid.
 /// The object has to outlive the reference.
-pub unsafe fn change_lifetime_const<'a, 'b, T>(x: &'a T) -> &'b T {
+pub unsafe fn change_lifetime_const<'b, T>(x: &T) -> &'b T {
     &*(x as *const T)
 }
 
@@ -30,7 +30,7 @@ pub unsafe fn change_lifetime_const<'a, 'b, T>(x: &'a T) -> &'b T {
 ///
 /// Requires that you ensure the reference does not become invalid.
 /// The object has to outlive the reference.
-pub unsafe fn change_lifetime_mut<'a, 'b, T>(x: &'a mut T) -> &'b mut T {
+pub unsafe fn change_lifetime_mut<'b, T>(x: &mut T) -> &'b mut T {
     &mut *(x as *mut T)
 }
 

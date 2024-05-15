@@ -115,12 +115,6 @@ impl<'a, K: 'a + Eq + Hash, S: BuildHasher + Clone> DashSet<K, S> {
         }
     }
 
-    /// Hash a given item to produce a usize.
-    /// Uses the provided or default HashBuilder.
-    pub fn hash_usize<T: Hash>(&self, item: &T) -> usize {
-        self.inner.hash_usize(item)
-    }
-
     cfg_if! {
         if #[cfg(feature = "raw-api")] {
             /// Allows you to peek at the inner shards that store your data.
@@ -263,7 +257,7 @@ impl<'a, K: 'a + Eq + Hash, S: BuildHasher + Clone> DashSet<K, S> {
     /// words.insert("hello");
     /// assert_eq!(words.iter().count(), 1);
     /// ```
-    pub fn iter(&'a self) -> Iter<'a, K, S, DashMap<K, (), S>> {
+    pub fn iter(&'a self) -> Iter<'a, K, DashMap<K, (), S>> {
         let iter = self.inner.iter();
 
         Iter::new(iter)
@@ -280,7 +274,7 @@ impl<'a, K: 'a + Eq + Hash, S: BuildHasher + Clone> DashSet<K, S> {
     /// youtubers.insert("Bosnian Bill");
     /// assert_eq!(*youtubers.get("Bosnian Bill").unwrap(), "Bosnian Bill");
     /// ```
-    pub fn get<Q>(&'a self, key: &Q) -> Option<Ref<'a, K, S>>
+    pub fn get<Q>(&'a self, key: &Q) -> Option<Ref<'a, K>>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,

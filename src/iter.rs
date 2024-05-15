@@ -3,10 +3,10 @@ use super::util;
 use crate::lock::{RwLockReadGuard, RwLockWriteGuard};
 use crate::t::Map;
 use crate::util::SharedValue;
-use crate::{DashMap, HashMap};
+use crate::{DashMap, HashTable};
 use core::hash::{BuildHasher, Hash};
 use core::mem;
-use hashbrown::hash_map;
+use hashbrown::hash_table;
 use std::collections::hash_map::RandomState;
 use std::sync::Arc;
 
@@ -29,7 +29,7 @@ pub struct OwningIter<K, V, S = RandomState> {
     current: Option<GuardOwningIter<K, V>>,
 }
 
-impl<K: Eq + Hash, V, S: BuildHasher + Clone> OwningIter<K, V, S> {
+impl<K: Eq + Hash, V, S: BuildHasher> OwningIter<K, V, S> {
     pub(crate) fn new(map: DashMap<K, V, S>) -> Self {
         Self {
             map,
@@ -39,9 +39,9 @@ impl<K: Eq + Hash, V, S: BuildHasher + Clone> OwningIter<K, V, S> {
     }
 }
 
-type GuardOwningIter<K, V> = hash_map::IntoIter<K, SharedValue<V>>;
+type GuardOwningIter<K, V> = hash_table::IntoIter<(K, SharedValue<V>)>;
 
-impl<K: Eq + Hash, V, S: BuildHasher + Clone> Iterator for OwningIter<K, V, S> {
+impl<K: Eq + Hash, V, S: BuildHasher> Iterator for OwningIter<K, V, S> {
     type Item = (K, V);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -59,9 +59,7 @@ impl<K: Eq + Hash, V, S: BuildHasher + Clone> Iterator for OwningIter<K, V, S> {
             //let guard = unsafe { self.map._yield_read_shard(self.shard_i) };
             let mut shard_wl = unsafe { self.map._yield_write_shard(self.shard_i) };
 
-            let hasher = self.map._hasher();
-
-            let map = mem::replace(&mut *shard_wl, HashMap::with_hasher(hasher));
+            let map = mem::replace(&mut *shard_wl, HashTable::new());
 
             drop(shard_wl);
 
@@ -79,7 +77,7 @@ unsafe impl<K, V, S> Send for OwningIter<K, V, S>
 where
     K: Eq + Hash + Send,
     V: Send,
-    S: BuildHasher + Clone + Send,
+    S: BuildHasher + Send,
 {
 }
 
@@ -87,18 +85,18 @@ unsafe impl<K, V, S> Sync for OwningIter<K, V, S>
 where
     K: Eq + Hash + Sync,
     V: Sync,
-    S: BuildHasher + Clone + Sync,
+    S: BuildHasher + Sync,
 {
 }
 
-type GuardIter<'a, K, V, S> = (
-    Arc<RwLockReadGuard<'a, HashMap<K, V, S>>>,
-    hash_map::Iter<'a, K, SharedValue<V>>,
+type GuardIter<'a, K, V> = (
+    Arc<RwLockReadGuard<'a, HashTable<K, V>>>,
+    hash_table::Iter<'a, (K, SharedValue<V>)>,
 );
 
-type GuardIterMut<'a, K, V, S> = (
-    Arc<RwLockWriteGuard<'a, HashMap<K, V, S>>>,
-    hash_map::IterMut<'a, K, SharedValue<V>>,
+type GuardIterMut<'a, K, V> = (
+    Arc<RwLockWriteGuard<'a, HashTable<K, V>>>,
+    hash_table::IterMut<'a, (K, SharedValue<V>)>,
 );
 
 /// Iterator over a DashMap yielding immutable references.
@@ -112,37 +110,35 @@ type GuardIterMut<'a, K, V, S> = (
 /// map.insert("hello", "world");
 /// assert_eq!(map.iter().count(), 1);
 /// ```
-pub struct Iter<'a, K, V, S = RandomState, M = DashMap<K, V, S>> {
+pub struct Iter<'a, K, V, M = DashMap<K, V>> {
     map: &'a M,
     shard_i: usize,
-    current: Option<GuardIter<'a, K, V, S>>,
+    current: Option<GuardIter<'a, K, V>>,
 }
 
-impl<'i, K: Clone + Hash + Eq, V: Clone, S: Clone + BuildHasher> Clone for Iter<'i, K, V, S> {
+impl<'i, K: Clone + Hash + Eq, V: Clone> Clone for Iter<'i, K, V> {
     fn clone(&self) -> Self {
         Iter::new(self.map)
     }
 }
 
-unsafe impl<'a, 'i, K, V, S, M> Send for Iter<'i, K, V, S, M>
+unsafe impl<'a, 'i, K, V, M> Send for Iter<'i, K, V, M>
 where
     K: 'a + Eq + Hash + Send,
     V: 'a + Send,
-    S: 'a + BuildHasher + Clone,
-    M: Map<'a, K, V, S>,
+    M: Map<'a, K, V>,
 {
 }
 
-unsafe impl<'a, 'i, K, V, S, M> Sync for Iter<'i, K, V, S, M>
+unsafe impl<'a, 'i, K, V, M> Sync for Iter<'i, K, V, M>
 where
     K: 'a + Eq + Hash + Sync,
     V: 'a + Sync,
-    S: 'a + BuildHasher + Clone,
-    M: Map<'a, K, V, S>,
+    M: Map<'a, K, V>,
 {
 }
 
-impl<'a, K: Eq + Hash, V, S: 'a + BuildHasher + Clone, M: Map<'a, K, V, S>> Iter<'a, K, V, S, M> {
+impl<'a, K: Eq + Hash, V, M: Map<'a, K, V>> Iter<'a, K, V, M> {
     pub(crate) fn new(map: &'a M) -> Self {
         Self {
             map,
@@ -152,10 +148,8 @@ impl<'a, K: Eq + Hash, V, S: 'a + BuildHasher + Clone, M: Map<'a, K, V, S>> Iter
     }
 }
 
-impl<'a, K: Eq + Hash, V, S: 'a + BuildHasher + Clone, M: Map<'a, K, V, S>> Iterator
-    for Iter<'a, K, V, S, M>
-{
-    type Item = RefMulti<'a, K, V, S>;
+impl<'a, K: Eq + Hash, V, M: Map<'a, K, V>> Iterator for Iter<'a, K, V, M> {
+    type Item = RefMulti<'a, K, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -173,7 +167,7 @@ impl<'a, K: Eq + Hash, V, S: 'a + BuildHasher + Clone, M: Map<'a, K, V, S>> Iter
 
             let guard = unsafe { self.map._yield_read_shard(self.shard_i) };
 
-            let sref: &HashMap<K, V, S> = unsafe { util::change_lifetime_const(&*guard) };
+            let sref: &HashTable<K, V> = unsafe { util::change_lifetime_const(&*guard) };
 
             let iter = sref.iter();
 
@@ -196,33 +190,29 @@ impl<'a, K: Eq + Hash, V, S: 'a + BuildHasher + Clone, M: Map<'a, K, V, S>> Iter
 /// map.iter_mut().for_each(|mut r| *r += 1);
 /// assert_eq!(*map.get("Johnny").unwrap(), 22);
 /// ```
-pub struct IterMut<'a, K, V, S = RandomState, M = DashMap<K, V, S>> {
+pub struct IterMut<'a, K, V, M = DashMap<K, V>> {
     map: &'a M,
     shard_i: usize,
-    current: Option<GuardIterMut<'a, K, V, S>>,
+    current: Option<GuardIterMut<'a, K, V>>,
 }
 
-unsafe impl<'a, 'i, K, V, S, M> Send for IterMut<'i, K, V, S, M>
+unsafe impl<'a, 'i, K, V, M> Send for IterMut<'i, K, V, M>
 where
     K: 'a + Eq + Hash + Send,
     V: 'a + Send,
-    S: 'a + BuildHasher + Clone,
-    M: Map<'a, K, V, S>,
+    M: Map<'a, K, V>,
 {
 }
 
-unsafe impl<'a, 'i, K, V, S, M> Sync for IterMut<'i, K, V, S, M>
+unsafe impl<'a, 'i, K, V, M> Sync for IterMut<'i, K, V, M>
 where
     K: 'a + Eq + Hash + Sync,
     V: 'a + Sync,
-    S: 'a + BuildHasher + Clone,
-    M: Map<'a, K, V, S>,
+    M: Map<'a, K, V>,
 {
 }
 
-impl<'a, K: Eq + Hash, V, S: 'a + BuildHasher + Clone, M: Map<'a, K, V, S>>
-    IterMut<'a, K, V, S, M>
-{
+impl<'a, K: Eq + Hash, V, M: Map<'a, K, V>> IterMut<'a, K, V, M> {
     pub(crate) fn new(map: &'a M) -> Self {
         Self {
             map,
@@ -232,10 +222,8 @@ impl<'a, K: Eq + Hash, V, S: 'a + BuildHasher + Clone, M: Map<'a, K, V, S>>
     }
 }
 
-impl<'a, K: Eq + Hash, V, S: 'a + BuildHasher + Clone, M: Map<'a, K, V, S>> Iterator
-    for IterMut<'a, K, V, S, M>
-{
-    type Item = RefMutMulti<'a, K, V, S>;
+impl<'a, K: Eq + Hash, V, M: Map<'a, K, V>> Iterator for IterMut<'a, K, V, M> {
+    type Item = RefMutMulti<'a, K, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -259,7 +247,7 @@ impl<'a, K: Eq + Hash, V, S: 'a + BuildHasher + Clone, M: Map<'a, K, V, S>> Iter
 
             let mut guard = unsafe { self.map._yield_write_shard(self.shard_i) };
 
-            let sref: &mut HashMap<K, V, S> = unsafe { util::change_lifetime_mut(&mut *guard) };
+            let sref: &mut HashTable<K, V> = unsafe { util::change_lifetime_mut(&mut *guard) };
 
             let iter = sref.iter_mut();
 
