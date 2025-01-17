@@ -31,7 +31,7 @@ impl<'a, K: Eq + Hash, V> RefMulti<'a, K, V> {
     }
 }
 
-impl<'a, K: Eq + Hash, V> Deref for RefMulti<'a, K, V> {
+impl<K: Eq + Hash, V> Deref for RefMulti<'_, K, V> {
     type Target = V;
 
     fn deref(&self) -> &V {
@@ -75,7 +75,7 @@ impl<'a, K: Eq + Hash, V> RefMutMulti<'a, K, V> {
     }
 }
 
-impl<'a, K: Eq + Hash, V> Deref for RefMutMulti<'a, K, V> {
+impl<K: Eq + Hash, V> Deref for RefMutMulti<'_, K, V> {
     type Target = V;
 
     fn deref(&self) -> &V {
@@ -83,7 +83,7 @@ impl<'a, K: Eq + Hash, V> Deref for RefMutMulti<'a, K, V> {
     }
 }
 
-impl<'a, K: Eq + Hash, V> DerefMut for RefMutMulti<'a, K, V> {
+impl<K: Eq + Hash, V> DerefMut for RefMutMulti<'_, K, V> {
     fn deref_mut(&mut self) -> &mut V {
         self.value_mut()
     }

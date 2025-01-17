@@ -40,7 +40,7 @@ pub(crate) struct RwLockReadGuardDetached<'a, R: RawRwLock> {
     _marker: PhantomData<R::GuardMarker>,
 }
 
-impl<'a, R: RawRwLock> Drop for RwLockReadGuardDetached<'a, R> {
+impl<R: RawRwLock> Drop for RwLockReadGuardDetached<'_, R> {
     fn drop(&mut self) {
         unsafe {
             self.lock.unlock_shared();
@@ -54,7 +54,7 @@ pub(crate) struct RwLockWriteGuardDetached<'a, R: RawRwLock> {
     _marker: PhantomData<R::GuardMarker>,
 }
 
-impl<'a, R: RawRwLock> Drop for RwLockWriteGuardDetached<'a, R> {
+impl<R: RawRwLock> Drop for RwLockWriteGuardDetached<'_, R> {
     fn drop(&mut self) {
         unsafe {
             self.lock.unlock_exclusive();

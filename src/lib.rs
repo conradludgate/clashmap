@@ -112,7 +112,7 @@ where
     }
 }
 
-impl<'a, K: 'a + Eq + Hash, V: 'a> DashMap<K, V, RandomState> {
+impl<K: Eq + Hash, V> DashMap<K, V, RandomState> {
     /// Creates a new DashMap with a capacity of 0.
     ///
     /// # Examples
@@ -183,7 +183,7 @@ impl<'a, K: 'a + Eq + Hash, V: 'a> DashMap<K, V, RandomState> {
     }
 }
 
-impl<'a, K: 'a + Eq + Hash, V: 'a, S: BuildHasher + Clone> DashMap<K, V, S> {
+impl<K: Eq + Hash, V, S: BuildHasher + Clone> DashMap<K, V, S> {
     /// Wraps this `DashMap` into a read-only view. This view allows to obtain raw references to the stored values.
     pub fn into_read_only(self) -> ReadOnlyView<K, V, S> {
         ReadOnlyView::new(self)
@@ -584,7 +584,7 @@ impl<'a, K: 'a + Eq + Hash, V: 'a, S: BuildHasher + Clone> DashMap<K, V, S> {
     /// words.insert("hello", "world");
     /// assert_eq!(words.iter().count(), 1);
     /// ```
-    pub fn iter(&'a self) -> Iter<'a, K, V, S> {
+    pub fn iter(&self) -> Iter<'_, K, V, S> {
         Iter::new(self)
     }
 
@@ -602,7 +602,7 @@ impl<'a, K: 'a + Eq + Hash, V: 'a, S: BuildHasher + Clone> DashMap<K, V, S> {
     /// map.iter_mut().for_each(|mut r| *r += 1);
     /// assert_eq!(*map.get("Johnny").unwrap(), 22);
     /// ```
-    pub fn iter_mut(&'a self) -> IterMut<'a, K, V, S> {
+    pub fn iter_mut(&self) -> IterMut<'_, K, V, S> {
         IterMut::new(self)
     }
 
@@ -619,7 +619,7 @@ impl<'a, K: 'a + Eq + Hash, V: 'a, S: BuildHasher + Clone> DashMap<K, V, S> {
     /// youtubers.insert("Bosnian Bill", 457000);
     /// assert_eq!(*youtubers.get("Bosnian Bill").unwrap(), 457000);
     /// ```
-    pub fn get<Q>(&'a self, key: &Q) -> Option<Ref<'a, K, V>>
+    pub fn get<Q>(&self, key: &Q) -> Option<Ref<'_, K, V>>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
@@ -654,7 +654,7 @@ impl<'a, K: 'a + Eq + Hash, V: 'a, S: BuildHasher + Clone> DashMap<K, V, S> {
     /// *class.get_mut("Albin").unwrap() -= 1;
     /// assert_eq!(*class.get("Albin").unwrap(), 14);
     /// ```
-    pub fn get_mut<Q>(&'a self, key: &Q) -> Option<RefMut<'a, K, V>>
+    pub fn get_mut<Q>(&self, key: &Q) -> Option<RefMut<'_, K, V>>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
@@ -694,7 +694,7 @@ impl<'a, K: 'a + Eq + Hash, V: 'a, S: BuildHasher + Clone> DashMap<K, V, S> {
     /// let result2 = map.try_get("Johnny");
     /// assert!(result2.is_locked());
     /// ```
-    pub fn try_get<Q>(&'a self, key: &Q) -> TryResult<Ref<'a, K, V>>
+    pub fn try_get<Q>(&self, key: &Q) -> TryResult<Ref<'_, K, V>>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
@@ -738,7 +738,7 @@ impl<'a, K: 'a + Eq + Hash, V: 'a, S: BuildHasher + Clone> DashMap<K, V, S> {
     /// let result2 = map.try_get_mut("Johnny");
     /// assert!(result2.is_locked());
     /// ```
-    pub fn try_get_mut<Q>(&'a self, key: &Q) -> TryResult<RefMut<'a, K, V>>
+    pub fn try_get_mut<Q>(&self, key: &Q) -> TryResult<RefMut<'_, K, V>>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
@@ -982,7 +982,7 @@ impl<'a, K: 'a + Eq + Hash, V: 'a, S: BuildHasher + Clone> DashMap<K, V, S> {
     /// See the documentation on `dashmap::mapref::entry` for more details.
     ///
     /// **Locking behaviour:** May deadlock if called when holding any sort of reference into the map.
-    pub fn entry(&'a self, key: K) -> Entry<'a, K, V> {
+    pub fn entry(&self, key: K) -> Entry<'_, K, V> {
         let hash = self.hash_u64(&key);
 
         let idx = self.determine_shard(hash as usize);
@@ -1013,7 +1013,7 @@ impl<'a, K: 'a + Eq + Hash, V: 'a, S: BuildHasher + Clone> DashMap<K, V, S> {
     /// See the documentation on `dashmap::mapref::entry` for more details.
     ///
     /// Returns None if the shard is currently locked.
-    pub fn try_entry(&'a self, key: K) -> Option<Entry<'a, K, V>> {
+    pub fn try_entry(&self, key: K) -> Option<Entry<'_, K, V>> {
         let hash = self.hash_u64(&key);
 
         let idx = self.determine_shard(hash as usize);
@@ -1062,37 +1062,34 @@ impl<'a, K: 'a + Eq + Hash, V: 'a, S: BuildHasher + Clone> DashMap<K, V, S> {
         Ok(())
     }
 
-    unsafe fn get_read_shard(&'a self, i: usize) -> &'a HashMap<K, V> {
+    unsafe fn get_read_shard(&self, i: usize) -> &HashMap<K, V> {
         debug_assert!(i < self.shards.len());
 
         &*self.shards.get_unchecked(i).data_ptr()
     }
 
-    unsafe fn yield_read_shard(&'a self, i: usize) -> RwLockReadGuard<'a, HashMap<K, V>> {
+    unsafe fn yield_read_shard(&self, i: usize) -> RwLockReadGuard<'_, HashMap<K, V>> {
         debug_assert!(i < self.shards.len());
 
         self.shards.get_unchecked(i).read()
     }
 
-    unsafe fn yield_write_shard(&'a self, i: usize) -> RwLockWriteGuard<'a, HashMap<K, V>> {
+    unsafe fn yield_write_shard(&self, i: usize) -> RwLockWriteGuard<'_, HashMap<K, V>> {
         debug_assert!(i < self.shards.len());
 
         self.shards.get_unchecked(i).write()
     }
 
-    unsafe fn try_yield_read_shard(
-        &'a self,
-        i: usize,
-    ) -> Option<RwLockReadGuard<'a, HashMap<K, V>>> {
+    unsafe fn try_yield_read_shard(&self, i: usize) -> Option<RwLockReadGuard<'_, HashMap<K, V>>> {
         debug_assert!(i < self.shards.len());
 
         self.shards.get_unchecked(i).try_read()
     }
 
     unsafe fn try_yield_write_shard(
-        &'a self,
+        &self,
         i: usize,
-    ) -> Option<RwLockWriteGuard<'a, HashMap<K, V>>> {
+    ) -> Option<RwLockWriteGuard<'_, HashMap<K, V>>> {
         debug_assert!(i < self.shards.len());
 
         self.shards.get_unchecked(i).try_write()
