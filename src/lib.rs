@@ -508,7 +508,7 @@ impl<K: Eq + Hash, V, S: BuildHasher + Clone> DashMap<K, V, S> {
 
         let idx = self._determine_shard(hash as usize);
 
-        let mut shard = unsafe { idx.yield_write_shard() };
+        let mut shard = idx.yield_write_shard();
 
         if let Ok(entry) = shard.find_entry(hash, |(k, _v)| key == k.borrow()) {
             let (k, v) = entry.get();
@@ -532,7 +532,7 @@ impl<K: Eq + Hash, V, S: BuildHasher + Clone> DashMap<K, V, S> {
 
         let idx = self._determine_shard(hash as usize);
 
-        let mut shard = unsafe { idx.yield_write_shard() };
+        let mut shard = idx.yield_write_shard();
 
         if let Ok(mut entry) = shard.find_entry(hash, |(k, _v)| key == k.borrow()) {
             let (k, v) = entry.get_mut();
@@ -604,7 +604,7 @@ impl<K: Eq + Hash, V, S: BuildHasher + Clone> DashMap<K, V, S> {
 
         let idx = self._determine_shard(hash as usize);
 
-        let shard = unsafe { idx.yield_read_shard() };
+        let shard = idx.yield_read_shard();
         // Safety: The data will not outlive the guard.
         let (guard, shard) = unsafe { RwLockReadGuardDetached::detach_from(shard) };
 
@@ -639,7 +639,7 @@ impl<K: Eq + Hash, V, S: BuildHasher + Clone> DashMap<K, V, S> {
 
         let idx = self._determine_shard(hash as usize);
 
-        let shard = unsafe { idx.yield_write_shard() };
+        let shard = idx.yield_write_shard();
         // Safety: The data will not outlive the guard.
         let (guard, shard) = unsafe { RwLockWriteGuardDetached::detach_from(shard) };
 
@@ -723,7 +723,7 @@ impl<K: Eq + Hash, V, S: BuildHasher + Clone> DashMap<K, V, S> {
 
         let idx = self._determine_shard(hash as usize);
 
-        let shard = match unsafe { idx.try_yield_write_shard() } {
+        let shard = match idx.try_yield_write_shard() {
             Some(shard) => shard,
             None => return TryResult::Locked,
         };
@@ -963,7 +963,7 @@ impl<K: Eq + Hash, V, S: BuildHasher + Clone> DashMap<K, V, S> {
 
         let idx = self._determine_shard(hash as usize);
 
-        let shard = unsafe { idx.yield_write_shard() };
+        let shard = idx.yield_write_shard();
         // Safety: The data will not outlive the guard.
         let (guard, shard) = unsafe { RwLockWriteGuardDetached::detach_from(shard) };
 
@@ -994,7 +994,7 @@ impl<K: Eq + Hash, V, S: BuildHasher + Clone> DashMap<K, V, S> {
 
         let idx = self._determine_shard(hash as usize);
 
-        let shard = unsafe { idx.try_yield_write_shard() }?;
+        let shard = idx.try_yield_write_shard()?;
         // Safety: The data will not outlive the guard.
         let (guard, shard) = unsafe { RwLockWriteGuardDetached::detach_from(shard) };
 
@@ -1054,21 +1054,6 @@ impl<K: Eq + Hash, V, S: BuildHasher + Clone> DashMap<K, V, S> {
         debug_assert!(i < self.shards.len());
 
         self.shards.get_unchecked(i).write()
-    }
-
-    unsafe fn try_yield_read_shard(&self, i: usize) -> Option<RwLockReadGuard<'_, HashMap<K, V>>> {
-        debug_assert!(i < self.shards.len());
-
-        self.shards.get_unchecked(i).try_read()
-    }
-
-    unsafe fn try_yield_write_shard(
-        &self,
-        i: usize,
-    ) -> Option<RwLockWriteGuard<'_, HashMap<K, V>>> {
-        debug_assert!(i < self.shards.len());
-
-        self.shards.get_unchecked(i).try_write()
     }
 }
 
