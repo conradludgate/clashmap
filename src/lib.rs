@@ -25,7 +25,7 @@ pub mod rayon {
 }
 
 #[cfg(not(feature = "raw-api"))]
-use crate::lock::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use crate::lock::RwLock;
 
 #[cfg(feature = "raw-api")]
 pub use crate::lock::{RawRwLock, RwLock, RwLockReadGuard, RwLockWriteGuard};

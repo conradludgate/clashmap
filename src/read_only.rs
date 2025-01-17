@@ -1,7 +1,6 @@
 #[cfg(feature = "raw-api")]
 use crate::lock::RwLock;
 use crate::DashMap;
-#[cfg(feature = "raw-api")]
 use crate::HashMap;
 use core::borrow::Borrow;
 use core::fmt;
