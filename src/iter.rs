@@ -49,11 +49,11 @@ impl<K: Eq + Hash, V, S: BuildHasher + Clone> Iterator for OwningIter<K, V, S> {
                 }
             }
 
-            if self.shard_i == self.map._shard_count() {
+            if self.shard_i == self.map.shards.len() {
                 return None;
             }
 
-            let mut shard_wl = unsafe { self.map._yield_write_shard(self.shard_i) };
+            let mut shard_wl = unsafe { self.map.yield_write_shard(self.shard_i) };
 
             let map = mem::take(&mut *shard_wl);
 
@@ -96,7 +96,7 @@ pub struct Iter<'a, K, V, S = RandomState> {
     marker: PhantomData<S>,
 }
 
-impl<'i, K: Clone + Hash + Eq, V: Clone, S: Clone + BuildHasher> Clone for Iter<'i, K, V, S> {
+impl<K: Clone + Hash + Eq, V: Clone, S: Clone + BuildHasher> Clone for Iter<'_, K, V, S> {
     fn clone(&self) -> Self {
         Iter::new(self.map)
     }
@@ -127,11 +127,11 @@ impl<'a, K: 'a + Eq + Hash, V: 'a, S: 'a + BuildHasher + Clone> Iterator for Ite
                 }
             }
 
-            if self.shard_i == self.map._shard_count() {
+            if self.shard_i == self.map.shards.len() {
                 return None;
             }
 
-            let guard = unsafe { self.map._yield_read_shard(self.shard_i) };
+            let guard = unsafe { self.map.yield_read_shard(self.shard_i) };
             let (guard, shard) = unsafe { RwLockReadGuardDetached::detach_from(guard) };
 
             let iter = shard.iter();
@@ -162,9 +162,7 @@ pub struct IterMut<'a, K, V, S = RandomState> {
     marker: PhantomData<S>,
 }
 
-impl<'a, K: 'a + Eq + Hash, V: 'a, S: 'a + BuildHasher + Clone>
-    IterMut<'a, K, V, S>
-{
+impl<'a, K: 'a + Eq + Hash, V: 'a, S: 'a + BuildHasher + Clone> IterMut<'a, K, V, S> {
     pub(crate) fn new(map: &'a DashMap<K, V, S>) -> Self {
         Self {
             map,
@@ -175,9 +173,7 @@ impl<'a, K: 'a + Eq + Hash, V: 'a, S: 'a + BuildHasher + Clone>
     }
 }
 
-impl<'a, K: 'a + Eq + Hash, V: 'a, S: 'a + BuildHasher + Clone> Iterator
-    for IterMut<'a, K, V, S>
-{
+impl<'a, K: 'a + Eq + Hash, V: 'a, S: 'a + BuildHasher + Clone> Iterator for IterMut<'a, K, V, S> {
     type Item = RefMutMulti<'a, K, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -191,11 +187,11 @@ impl<'a, K: 'a + Eq + Hash, V: 'a, S: 'a + BuildHasher + Clone> Iterator
                 }
             }
 
-            if self.shard_i == self.map._shard_count() {
+            if self.shard_i == self.map.shards.len() {
                 return None;
             }
 
-            let guard = unsafe { self.map._yield_write_shard(self.shard_i) };
+            let guard = unsafe { self.map.yield_write_shard(self.shard_i) };
             let (guard, shard) = unsafe { RwLockWriteGuardDetached::detach_from(guard) };
 
             let iter = shard.iter_mut();

@@ -29,9 +29,7 @@ impl<'a, K: 'a + Eq + Hash, S: 'a + BuildHasher + Clone> Iter<'a, K, S> {
     }
 }
 
-impl<'a, K: 'a + Eq + Hash, S: 'a + BuildHasher + Clone> Iterator
-    for Iter<'a, K, S>
-{
+impl<'a, K: 'a + Eq + Hash, S: 'a + BuildHasher + Clone> Iterator for Iter<'a, K, S> {
     type Item = RefMulti<'a, K>;
 
     fn next(&mut self) -> Option<Self::Item> {
