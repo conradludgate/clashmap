@@ -106,13 +106,12 @@ impl<'a, K: Eq + Hash, V> RefMut<'a, K, V> {
     }
 
     pub fn downgrade(self) -> Ref<'a, K, V> {
-        unsafe {
-            Ref::new(
-                RwLockWriteGuardDetached::downgrade(self.guard),
-                self.k,
-                self.v,
-            )
-        }
+        Ref::new(
+            // SAFETY: `Ref` will prevent writes to the data.
+            unsafe { RwLockWriteGuardDetached::downgrade(self.guard) },
+            self.k,
+            self.v,
+        )
     }
 
     pub fn map<F, T>(self, f: F) -> MappedRefMut<'a, K, T>
