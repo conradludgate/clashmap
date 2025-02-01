@@ -1,23 +1,20 @@
 use crate::iter::{Iter, IterMut, OwningIter};
-use crate::lock::{RwLock, RwLockReadGuardDetached, RwLockWriteGuardDetached};
 use crate::mapref::entry_ref::{EntryRef, VacantEntryRef};
 use crate::mapref::entrymut::{EntryMut, OccupiedEntryMut, VacantEntryMut};
 use crate::mapref::multiple::RefMulti;
 use crate::mapref::one::{Ref, RefMut};
 use crate::try_result::TryResult;
 use crate::{
-    default_shard_amount, Entry, HashMap, OccupiedEntry, ReadOnlyView, Shard, TryReserveError,
+    default_shard_amount, ClashTable, Entry, OccupiedEntry, ReadOnlyView, TryReserveError,
     VacantEntry,
 };
 use core::fmt;
 use core::hash::{BuildHasher, Hash, Hasher};
 use core::iter::FromIterator;
 use core::ops::{BitAnd, BitOr, Shl, Shr, Sub};
-use crossbeam_utils::CachePadded;
-use hashbrown::{hash_table, Equivalent};
+use hashbrown::Equivalent;
 use replace_with::replace_with_or_abort;
 use std::collections::hash_map::RandomState;
-use std::convert::Infallible;
 
 /// ClashMap is an implementation of a concurrent associative array/hashmap in Rust.
 ///
@@ -31,24 +28,14 @@ use std::convert::Infallible;
 /// Documentation mentioning locking behaviour acts in the reference frame of the calling thread.
 /// This means that it is safe to ignore it across multiple threads.
 pub struct ClashMap<K, V, S = RandomState> {
-    pub(crate) shift: usize,
-    pub(crate) shards: Box<[Shard<K, V>]>,
+    pub(crate) table: ClashTable<(K, V)>,
     pub(crate) hasher: S,
 }
 
 impl<K: Clone, V: Clone, S: Clone> Clone for ClashMap<K, V, S> {
     fn clone(&self) -> Self {
-        let mut inner_shards = Vec::new();
-
-        for shard in self.shards.iter() {
-            let shard = shard.read();
-
-            inner_shards.push(CachePadded::new(RwLock::new((*shard).clone())));
-        }
-
         Self {
-            shift: self.shift,
-            shards: inner_shards.into_boxed_slice(),
+            table: self.table.clone(),
             hasher: self.hasher.clone(),
         }
     }
@@ -150,8 +137,8 @@ impl<K: Eq + Hash, V, S: BuildHasher> ClashMap<K, V, S> {
     /// let map = ClashMap::<(), ()>::new();
     /// println!("Amount of shards: {}", map.shards().len());
     /// ```
-    pub fn shards(&self) -> &[CachePadded<RwLock<HashMap<K, V>>>] {
-        &self.shards
+    pub fn shards(&self) -> &[crate::Shard<K, V>] {
+        self.table.shards()
     }
 
     /// Provides mutable access to the inner shards that store your data.
@@ -178,8 +165,8 @@ impl<K: Eq + Hash, V, S: BuildHasher> ClashMap<K, V, S> {
     /// map.shards_mut()[shard_ind].get_mut().insert_unique(hash, data, hasher);
     /// assert_eq!(*map.get(&42).unwrap(), "forty two");
     /// ```
-    pub fn shards_mut(&mut self) -> &mut [Shard<K, V>] {
-        &mut self.shards
+    pub fn shards_mut(&mut self) -> &mut [crate::Shard<K, V>] {
+        self.table.shards_mut()
     }
 
     /// Consumes this `ClashMap` and returns the inner shards.
@@ -188,8 +175,8 @@ impl<K: Eq + Hash, V, S: BuildHasher> ClashMap<K, V, S> {
     /// Requires the `raw-api` feature to be enabled.
     ///
     /// See [`ClashMap::shards()`] and [`ClashMap::shards_mut()`] for more information.
-    pub fn into_shards(self) -> Box<[Shard<K, V>]> {
-        self.shards
+    pub fn into_shards(self) -> Box<[crate::Shard<K, V>]> {
+        self.table.into_shards()
     }
 
     /// Finds which shard a certain key is stored in.
@@ -212,7 +199,7 @@ impl<K: Eq + Hash, V, S: BuildHasher> ClashMap<K, V, S> {
         Q: Hash + Equivalent<K> + ?Sized,
     {
         let hash = self.hash_usize(&key);
-        self._determine_shard(hash)
+        self.table.determine_shard(hash)
     }
 
     /// Finds which shard a certain hash is stored in.
@@ -230,7 +217,7 @@ impl<K: Eq + Hash, V, S: BuildHasher> ClashMap<K, V, S> {
     /// println!("hash is stored in shard: {}", map.determine_shard(hash));
     /// ```
     pub fn determine_shard(&self, hash: usize) -> usize {
-        self._determine_shard(hash)
+        self.table.determine_shard(hash)
     }
 }
 
@@ -310,28 +297,12 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
     /// mappings.insert(8, 16);
     /// ```
     pub fn with_capacity_and_hasher_and_shard_amount(
-        mut capacity: usize,
+        capacity: usize,
         hasher: S,
         shard_amount: usize,
     ) -> Self {
-        assert!(shard_amount > 1);
-        assert!(shard_amount.is_power_of_two());
-
-        let shift = (usize::BITS - shard_amount.trailing_zeros()) as usize;
-
-        if capacity != 0 {
-            capacity = (capacity + (shard_amount - 1)) & !(shard_amount - 1);
-        }
-
-        let cps = capacity / shard_amount;
-
-        let shards = (0..shard_amount)
-            .map(|_| CachePadded::new(RwLock::new(HashMap::with_capacity(cps))))
-            .collect();
-
         Self {
-            shift,
-            shards,
+            table: ClashTable::with_capacity_and_shard_amount(capacity, shard_amount),
             hasher,
         }
     }
@@ -348,28 +319,6 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
         item.hash(&mut hasher);
 
         hasher.finish()
-    }
-
-    #[inline(always)]
-    pub(crate) fn _determine_shard(&self, hash: usize) -> usize {
-        // Leave the high 7 bits for the HashBrown SIMD tag.
-        let idx = (hash << 7) >> self.shift;
-
-        // hint to llvm that the panic bounds check can be removed
-        if idx >= self.shards.len() {
-            if cfg!(debug_assertions) {
-                unreachable!("invalid shard index")
-            } else {
-                // SAFETY: shards is always a power of two,
-                // and shift is calculated such that the resulting idx is always
-                // less than the shards length
-                unsafe {
-                    std::hint::unreachable_unchecked();
-                }
-            }
-        }
-
-        idx
     }
 
     /// Returns a reference to the map's [`BuildHasher`].
@@ -456,15 +405,9 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
         Q: Hash + Equivalent<K> + ?Sized,
     {
         let hash = self.hash_u64(&key);
-        let idx = self._determine_shard(hash as usize);
-
-        let mut shard = self.shards[idx].write();
-
-        if let Ok(entry) = shard.find_entry(hash, |(k, _v)| key.equivalent(k)) {
-            let ((k, v), _) = entry.remove();
-            Some((k, v))
-        } else {
-            None
+        match self.table.find_entry(hash, |(k, _v)| key.equivalent(k)) {
+            Ok(e) => Some(e.remove()),
+            Err(_) => None,
         }
     }
 
@@ -494,20 +437,16 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
         Q: Hash + Equivalent<K> + ?Sized,
     {
         let hash = self.hash_u64(&key);
-        let idx = self._determine_shard(hash as usize);
-
-        let mut shard = self.shards[idx].write();
-
-        if let Ok(entry) = shard.find_entry(hash, |(k, _v)| key.equivalent(k)) {
-            let (k, v) = entry.get();
-            if f(k, v) {
-                let ((k, v), _) = entry.remove();
-                Some((k, v))
-            } else {
-                None
+        match self.table.find_entry(hash, |(k, _v)| key.equivalent(k)) {
+            Ok(e) => {
+                let (k, v) = e.get();
+                if f(k, v) {
+                    Some(e.remove())
+                } else {
+                    None
+                }
             }
-        } else {
-            None
+            _ => None,
         }
     }
 
@@ -516,20 +455,16 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
         Q: Hash + Equivalent<K> + ?Sized,
     {
         let hash = self.hash_u64(&key);
-        let idx = self._determine_shard(hash as usize);
-
-        let mut shard = self.shards[idx].write();
-
-        if let Ok(mut entry) = shard.find_entry(hash, |(k, _v)| key.equivalent(k)) {
-            let (k, v) = entry.get_mut();
-            if f(k, v) {
-                let ((k, v), _) = entry.remove();
-                Some((k, v))
-            } else {
-                None
+        match self.table.find_entry(hash, |(k, _v)| key.equivalent(k)) {
+            Ok(mut e) => {
+                let (k, v) = e.get_mut();
+                if f(k, v) {
+                    Some(e.remove())
+                } else {
+                    None
+                }
             }
-        } else {
-            None
+            _ => None,
         }
     }
 
@@ -548,34 +483,6 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
     /// ```
     pub fn iter(&self) -> Iter<'_, K, V> {
         Iter::new(self)
-    }
-
-    fn for_each(&self, mut f: impl FnMut(&(K, V))) {
-        self.fold((), |(), kv| f(kv))
-    }
-
-    fn fold<R>(&self, r: R, mut f: impl FnMut(R, &(K, V)) -> R) -> R {
-        match self.try_fold::<R, Infallible>(r, |r, kv| Ok(f(r, kv))) {
-            Ok(r) => r,
-            Err(x) => match x {},
-        }
-    }
-
-    #[allow(dead_code)]
-    fn try_for_each<E>(&self, mut f: impl FnMut(&(K, V)) -> Result<(), E>) -> Result<(), E> {
-        self.try_fold((), |(), kv| f(kv))
-    }
-
-    fn try_fold<R, E>(
-        &self,
-        mut r: R,
-        mut f: impl FnMut(R, &(K, V)) -> Result<R, E>,
-    ) -> Result<R, E> {
-        for shard in self.shards.iter() {
-            let shard = shard.read();
-            r = shard.iter().try_fold(r, &mut f)?;
-        }
-        Ok(r)
     }
 
     /// Iterator over a ClashMap yielding mutable references.
@@ -614,19 +521,9 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
         Q: Hash + Equivalent<K> + ?Sized,
     {
         let hash = self.hash_u64(&key);
-        let idx = self._determine_shard(hash as usize);
-
-        let shard = self.shards[idx].read();
-
-        // SAFETY: The data will not outlive the guard, since we pass the guard to `Ref`.
-        let (guard, shard) = unsafe { RwLockReadGuardDetached::detach_from(shard) };
-
-        if let Some(entry) = shard.find(hash, |(k, _v)| key.equivalent(k)) {
-            let (k, v) = entry;
-            Some(Ref::new(guard, k, v))
-        } else {
-            None
-        }
+        self.table
+            .find(hash, |(k, _v)| key.equivalent(k))
+            .map(Ref::from)
     }
 
     /// Get a mutable reference to an entry in the map
@@ -648,19 +545,9 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
         Q: Hash + Equivalent<K> + ?Sized,
     {
         let hash = self.hash_u64(&key);
-        let idx = self._determine_shard(hash as usize);
-
-        let shard = self.shards[idx].write();
-
-        // SAFETY: The data will not outlive the guard, since we pass the guard to `RefMut`.
-        let (guard, shard) = unsafe { RwLockWriteGuardDetached::detach_from(shard) };
-
-        if let Ok(entry) = shard.find_entry(hash, |(k, _v)| key.equivalent(k)) {
-            let (k, v) = entry.into_mut();
-            Some(RefMut::new(guard, k, v))
-        } else {
-            None
-        }
+        self.table
+            .find_mut(hash, |(k, _v)| key.equivalent(k))
+            .map(RefMut::from)
     }
 
     /// Get an immutable reference to an entry in the map, if the shard is not locked.
@@ -687,21 +574,10 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
         Q: Hash + Equivalent<K> + ?Sized,
     {
         let hash = self.hash_u64(&key);
-        let idx = self._determine_shard(hash as usize);
-
-        let shard = match self.shards[idx].try_read() {
-            Some(shard) => shard,
-            None => return TryResult::Locked,
-        };
-
-        // SAFETY: The data will not outlive the guard, since we pass the guard to `Ref`.
-        let (guard, shard) = unsafe { RwLockReadGuardDetached::detach_from(shard) };
-
-        if let Some(entry) = shard.find(hash, |(k, _v)| key.equivalent(k)) {
-            let (k, v) = entry;
-            TryResult::Present(Ref::new(guard, k, v))
-        } else {
-            TryResult::Absent
+        match self.table.try_find(hash, |(k, _v)| key.equivalent(k)) {
+            TryResult::Present(r) => TryResult::Present(r.into()),
+            TryResult::Absent => TryResult::Absent,
+            TryResult::Locked => TryResult::Locked,
         }
     }
 
@@ -730,21 +606,10 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
         Q: Hash + Equivalent<K> + ?Sized,
     {
         let hash = self.hash_u64(&key);
-        let idx = self._determine_shard(hash as usize);
-
-        let shard = match self.shards[idx].try_write() {
-            Some(shard) => shard,
-            None => return TryResult::Locked,
-        };
-
-        // SAFETY: The data will not outlive the guard, since we pass the guard to `RefMut`.
-        let (guard, shard) = unsafe { RwLockWriteGuardDetached::detach_from(shard) };
-
-        if let Ok(entry) = shard.find_entry(hash, |(k, _v)| key.equivalent(k)) {
-            let (k, v) = entry.into_mut();
-            TryResult::Present(RefMut::new(guard, k, v))
-        } else {
-            TryResult::Absent
+        match self.table.try_find_mut(hash, |(k, _v)| key.equivalent(k)) {
+            TryResult::Present(r) => TryResult::Present(r.into()),
+            TryResult::Absent => TryResult::Absent,
+            TryResult::Locked => TryResult::Locked,
         }
     }
 
@@ -768,15 +633,11 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
     where
         K: Hash,
     {
-        self.shards.iter().for_each(|s| {
-            let mut shard = s.write();
-            let size = shard.len();
-            shard.shrink_to(size, |(k, _v)| {
-                let mut hasher = self.hasher.build_hasher();
-                k.hash(&mut hasher);
-                hasher.finish()
-            })
-        })
+        self.table.shrink_to_fit(|(k, _v)| {
+            let mut hasher = self.hasher.build_hasher();
+            k.hash(&mut hasher);
+            hasher.finish()
+        });
     }
 
     /// Retain elements that whose predicates return true
@@ -797,9 +658,7 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
     /// assert_eq!(people.len(), 2);
     /// ```
     pub fn retain(&self, mut f: impl FnMut(&K, &mut V) -> bool) {
-        self.shards.iter().for_each(|s| {
-            s.write().retain(|(k, v)| f(k, v));
-        })
+        self.table.retain(|(k, v)| f(k, v));
     }
 
     /// Fetches the total number of key-value pairs stored in the map.
@@ -818,7 +677,7 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
     /// assert_eq!(people.len(), 3);
     /// ```
     pub fn len(&self) -> usize {
-        self.shards.iter().map(|s| s.read().len()).sum()
+        self.table.len()
     }
 
     /// Checks if the map is empty or not.
@@ -860,7 +719,7 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
     ///
     /// **Locking behaviour:** May deadlock if called when holding a mutable reference into the map.
     pub fn capacity(&self) -> usize {
-        self.shards.iter().map(|s| s.read().capacity()).sum()
+        self.table.capacity()
     }
 
     /// Modify a specific value according to a function.
@@ -972,9 +831,11 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
     where
         K: Eq + Hash,
     {
+        use hashbrown::hash_table;
+
         let hash = self.hash_u64(&key);
-        let idx = self._determine_shard(hash as usize);
-        let shard = self.shards[idx].get_mut();
+        let idx = self.table._determine_shard(hash as usize);
+        let shard = self.table.shards[idx].get_mut();
 
         match shard.entry(
             hash,
@@ -1003,14 +864,7 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
         K: Eq + Hash,
     {
         let hash = self.hash_u64(&key);
-        let idx = self._determine_shard(hash as usize);
-
-        let shard = self.shards[idx].write();
-
-        // SAFETY: The data will not outlive the guard, since we pass the guard to `Entry`.
-        let (guard, shard) = unsafe { RwLockWriteGuardDetached::detach_from(shard) };
-
-        match shard.entry(
+        match self.table.entry(
             hash,
             |(k, _v)| k == &key,
             |(k, _v)| {
@@ -1019,10 +873,12 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
                 hasher.finish()
             },
         ) {
-            hash_table::Entry::Occupied(entry) => {
-                Entry::Occupied(OccupiedEntry::new(guard, key, entry))
+            crate::tableref::entry::Entry::Occupied(entry) => {
+                Entry::Occupied(OccupiedEntry::new(entry, key))
             }
-            hash_table::Entry::Vacant(entry) => Entry::Vacant(VacantEntry::new(guard, key, entry)),
+            crate::tableref::entry::Entry::Vacant(entry) => {
+                Entry::Vacant(VacantEntry::new(entry, key))
+            }
         }
     }
 
@@ -1036,14 +892,8 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
         K: Clone + Hash,
     {
         let hash = self.hash_u64(&key);
-        let idx = self._determine_shard(hash as usize);
 
-        let shard = self.shards[idx].write();
-
-        // SAFETY: The data will not outlive the guard, since we pass the guard to `Entry`.
-        let (guard, shard) = unsafe { RwLockWriteGuardDetached::detach_from(shard) };
-
-        match shard.entry(
+        match self.table.entry(
             hash,
             |(k, _v)| key.equivalent(k),
             |(k, _v)| {
@@ -1052,10 +902,13 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
                 hasher.finish()
             },
         ) {
-            hash_table::Entry::Occupied(entry) => {
-                EntryRef::Occupied(OccupiedEntry::new(guard, entry.get().0.clone(), entry))
+            crate::tableref::entry::Entry::Occupied(entry) => {
+                let key = entry.get().0.clone();
+                EntryRef::Occupied(OccupiedEntry::new(entry, key))
             }
-            hash_table::Entry::Vacant(entry) => EntryRef::Vacant(VacantEntryRef::new(guard, entry)),
+            crate::tableref::entry::Entry::Vacant(entry) => {
+                EntryRef::Vacant(VacantEntryRef::new(entry))
+            }
         }
     }
 
@@ -1068,14 +921,7 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
         K: Eq + Hash,
     {
         let hash = self.hash_u64(&key);
-        let idx = self._determine_shard(hash as usize);
-
-        let shard = self.shards[idx].try_write()?;
-
-        // SAFETY: The data will not outlive the guard, since we pass the guard to `Entry`.
-        let (guard, shard) = unsafe { RwLockWriteGuardDetached::detach_from(shard) };
-
-        match shard.entry(
+        match self.table.try_entry(
             hash,
             |(k, _v)| k == &key,
             |(k, _v)| {
@@ -1083,12 +929,12 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
                 k.hash(&mut hasher);
                 hasher.finish()
             },
-        ) {
-            hash_table::Entry::Occupied(entry) => {
-                Some(Entry::Occupied(OccupiedEntry::new(guard, key, entry)))
+        )? {
+            crate::tableref::entry::Entry::Occupied(occupied_entry) => {
+                Some(Entry::Occupied(OccupiedEntry::new(occupied_entry, key)))
             }
-            hash_table::Entry::Vacant(entry) => {
-                Some(Entry::Vacant(VacantEntry::new(guard, key, entry)))
+            crate::tableref::entry::Entry::Vacant(vacant_entry) => {
+                Some(Entry::Vacant(VacantEntry::new(vacant_entry, key)))
             }
         }
     }
@@ -1105,24 +951,18 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
     where
         K: Hash,
     {
-        for shard in self.shards.iter() {
-            shard
-                .write()
-                .try_reserve(additional, |(k, _v)| {
-                    let mut hasher = self.hasher.build_hasher();
-                    k.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .map_err(|_| TryReserveError {})?;
-        }
-        Ok(())
+        self.table.try_reserve(additional, |(k, _v)| {
+            let mut hasher = self.hasher.build_hasher();
+            k.hash(&mut hasher);
+            hasher.finish()
+        })
     }
 }
 
 impl<K: Eq + Hash + fmt::Debug, V: fmt::Debug, S: BuildHasher> fmt::Debug for ClashMap<K, V, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut pmap = f.debug_map();
-        self.for_each(|(k, v)| {
+        self.table.for_each(|(k, v)| {
             pmap.entry(k, v);
         });
         pmap.finish()
@@ -1227,26 +1067,7 @@ where
     S: typesize::TypeSize + BuildHasher,
 {
     fn extra_size(&self) -> usize {
-        let shards_extra_size: usize = self
-            .shards
-            .iter()
-            .map(|shard_lock| {
-                let shard = shard_lock.read();
-
-                let hashtable_size = shard.allocation_size();
-
-                let entry_size_iter = shard.iter().map(|entry| {
-                    let (key, value) = entry;
-                    key.extra_size() + value.extra_size()
-                });
-
-                core::mem::size_of::<CachePadded<RwLock<HashMap<K, V>>>>()
-                    + hashtable_size
-                    + entry_size_iter.sum::<usize>()
-            })
-            .sum();
-
-        self.hasher.extra_size() + shards_extra_size
+        self.hasher.extra_size() + self.table.extra_size()
     }
 
     typesize::if_typesize_details! {

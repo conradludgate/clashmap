@@ -1,7 +1,5 @@
-use hashbrown::hash_table;
-
 use super::one::RefMut;
-use crate::lock::RwLockWriteGuardDetached;
+use crate::tableref;
 use core::mem;
 
 pub enum Entry<'a, K, V> {
@@ -111,26 +109,17 @@ impl<'a, K, V> Entry<'a, K, V> {
 }
 
 pub struct VacantEntry<'a, K, V> {
-    guard: RwLockWriteGuardDetached<'a>,
+    entry: tableref::entry::VacantEntry<'a, (K, V)>,
     key: K,
-    entry: hash_table::VacantEntry<'a, (K, V)>,
 }
 
 impl<'a, K, V> VacantEntry<'a, K, V> {
-    pub(crate) fn new(
-        guard: RwLockWriteGuardDetached<'a>,
-        key: K,
-        entry: hash_table::VacantEntry<'a, (K, V)>,
-    ) -> Self {
-        Self { guard, key, entry }
+    pub(crate) fn new(entry: tableref::entry::VacantEntry<'a, (K, V)>, key: K) -> Self {
+        Self { key, entry }
     }
 
     pub fn insert(self, value: V) -> RefMut<'a, K, V> {
-        let occupied = self.entry.insert((self.key, value));
-
-        let (k, v) = occupied.into_mut();
-
-        RefMut::new(self.guard, k, v)
+        self.entry.insert((self.key, value)).into()
     }
 
     /// Sets the value of the entry with the VacantEntry’s key, and returns an OccupiedEntry.
@@ -138,9 +127,8 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
     where
         K: Clone,
     {
-        let entry = self.entry.insert((self.key.clone(), value));
-
-        OccupiedEntry::new(self.guard, self.key, entry)
+        let entry = self.entry.insert_entry((self.key.clone(), value));
+        OccupiedEntry::new(entry, self.key)
     }
 
     pub fn into_key(self) -> K {
@@ -153,18 +141,13 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
 }
 
 pub struct OccupiedEntry<'a, K, V> {
-    guard: RwLockWriteGuardDetached<'a>,
-    entry: hash_table::OccupiedEntry<'a, (K, V)>,
+    entry: tableref::entry::OccupiedEntry<'a, (K, V)>,
     key: K,
 }
 
 impl<'a, K, V> OccupiedEntry<'a, K, V> {
-    pub(crate) fn new(
-        guard: RwLockWriteGuardDetached<'a>,
-        key: K,
-        entry: hash_table::OccupiedEntry<'a, (K, V)>,
-    ) -> Self {
-        Self { guard, key, entry }
+    pub(crate) fn new(entry: tableref::entry::OccupiedEntry<'a, (K, V)>, key: K) -> Self {
+        Self { key, entry }
     }
 
     pub fn get(&self) -> &V {
@@ -180,8 +163,7 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
     }
 
     pub fn into_ref(self) -> RefMut<'a, K, V> {
-        let (k, v) = self.entry.into_mut();
-        RefMut::new(self.guard, k, v)
+        self.entry.into_mut().into()
     }
 
     pub fn into_key(self) -> K {
@@ -193,18 +175,15 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
     }
 
     pub fn remove(self) -> V {
-        let ((_k, v), _) = self.entry.remove();
-        v
+        self.entry.remove().1
     }
 
     pub fn remove_entry(self) -> (K, V) {
-        let ((k, v), _) = self.entry.remove();
-        (k, v)
+        self.entry.remove()
     }
 
     pub fn replace_entry(self, value: V) -> (K, V) {
-        let (k, v) = mem::replace(self.entry.into_mut(), (self.key, value));
-        (k, v)
+        mem::replace(self.entry.into_mut().t, (self.key, value))
     }
 }
 

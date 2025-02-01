@@ -4,8 +4,8 @@ use core::ops::{Deref, DerefMut};
 use std::fmt::{Debug, Formatter};
 
 pub struct Ref<'a, T> {
-    _guard: RwLockReadGuardDetached<'a>,
-    t: &'a T,
+    pub(crate) _guard: RwLockReadGuardDetached<'a>,
+    pub(crate) t: &'a T,
 }
 
 impl<'a, T> Ref<'a, T> {
@@ -57,8 +57,8 @@ impl<T> Deref for Ref<'_, T> {
 }
 
 pub struct RefMut<'a, T> {
-    guard: RwLockWriteGuardDetached<'a>,
-    t: &'a mut T,
+    pub(crate) guard: RwLockWriteGuardDetached<'a>,
+    pub(crate) t: &'a mut T,
 }
 
 impl<'a, T> RefMut<'a, T> {

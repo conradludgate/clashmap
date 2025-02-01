@@ -1,5 +1,6 @@
 use crate::lock::{RwLockReadGuardDetached, RwLockWriteGuardDetached};
-use crate::util::try_map;
+use crate::tableref;
+use crate::util::{try_map, try_map2};
 use core::ops::{Deref, DerefMut};
 use std::fmt::{Debug, Formatter};
 
@@ -10,14 +11,6 @@ pub struct Ref<'a, K, V> {
 }
 
 impl<'a, K, V> Ref<'a, K, V> {
-    pub(crate) fn new(guard: RwLockReadGuardDetached<'a>, k: &'a K, v: &'a V) -> Self {
-        Self {
-            _guard: guard,
-            k,
-            v,
-        }
-    }
-
     pub fn key(&self) -> &K {
         self.pair().0
     }
@@ -57,6 +50,16 @@ impl<'a, K, V> Ref<'a, K, V> {
     }
 }
 
+impl<'a, K, V> From<tableref::one::Ref<'a, (K, V)>> for Ref<'a, K, V> {
+    fn from(value: tableref::one::Ref<'a, (K, V)>) -> Self {
+        Self {
+            _guard: value._guard,
+            k: &value.t.0,
+            v: &value.t.1,
+        }
+    }
+}
+
 impl<K: Debug, V: Debug> Debug for Ref<'_, K, V> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Ref")
@@ -75,16 +78,16 @@ impl<K, V> Deref for Ref<'_, K, V> {
 }
 
 pub struct RefMut<'a, K, V> {
-    guard: RwLockWriteGuardDetached<'a>,
-    k: &'a K,
-    v: &'a mut V,
+    inner: tableref::one::RefMut<'a, (K, V)>,
+}
+
+impl<'a, K, V> From<tableref::one::RefMut<'a, (K, V)>> for RefMut<'a, K, V> {
+    fn from(inner: tableref::one::RefMut<'a, (K, V)>) -> Self {
+        Self { inner }
+    }
 }
 
 impl<'a, K, V> RefMut<'a, K, V> {
-    pub(crate) fn new(guard: RwLockWriteGuardDetached<'a>, k: &'a K, v: &'a mut V) -> Self {
-        Self { guard, k, v }
-    }
-
     pub fn key(&self) -> &K {
         self.pair().0
     }
@@ -98,30 +101,28 @@ impl<'a, K, V> RefMut<'a, K, V> {
     }
 
     pub fn pair(&self) -> (&K, &V) {
-        (self.k, self.v)
+        let (k, v) = self.inner.value();
+        (k, v)
     }
 
     pub fn pair_mut(&mut self) -> (&K, &mut V) {
-        (self.k, self.v)
+        let (k, v) = self.inner.value_mut();
+        (k, v)
     }
 
     pub fn downgrade(self) -> Ref<'a, K, V> {
-        Ref::new(
-            // SAFETY: `Ref` will prevent writes to the data.
-            unsafe { RwLockWriteGuardDetached::downgrade(self.guard) },
-            self.k,
-            self.v,
-        )
+        self.inner.downgrade().into()
     }
 
     pub fn map<F, T>(self, f: F) -> MappedRefMut<'a, K, T>
     where
         F: FnOnce(&mut V) -> &mut T,
     {
+        let (k, v) = self.inner.t;
         MappedRefMut {
-            _guard: self.guard,
-            k: self.k,
-            v: f(&mut *self.v),
+            _guard: self.inner.guard,
+            k,
+            v: f(v),
         }
     }
 
@@ -129,14 +130,16 @@ impl<'a, K, V> RefMut<'a, K, V> {
     where
         F: FnOnce(&mut V) -> Option<&mut T>,
     {
-        let Self { guard, k, v } = self;
-        match try_map(v, f) {
-            Ok(v) => Ok(MappedRefMut {
+        let tableref::one::RefMut { guard, t } = self.inner;
+        match try_map2(t, f) {
+            Ok((k, v)) => Ok(MappedRefMut {
                 _guard: guard,
                 k,
                 v,
             }),
-            Err(v) => Err(Self { guard, k, v }),
+            Err(t) => Err(Self {
+                inner: tableref::one::RefMut { guard, t },
+            }),
         }
     }
 }
@@ -144,8 +147,8 @@ impl<'a, K, V> RefMut<'a, K, V> {
 impl<K: Debug, V: Debug> Debug for RefMut<'_, K, V> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RefMut")
-            .field("k", &self.k)
-            .field("v", &self.v)
+            .field("k", &self.key())
+            .field("v", &self.value())
             .finish()
     }
 }

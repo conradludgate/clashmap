@@ -1,5 +1,5 @@
 use crate::lock::{RwLock, RwLockReadGuardDetached, RwLockWriteGuardDetached};
-use crate::tableref::entry::{Entry, OccupiedEntry, VacantEntry};
+use crate::tableref::entry::{AbsentEntry, Entry, OccupiedEntry, VacantEntry};
 use crate::tableref::iter::{Iter, IterMut, OwningIter};
 use crate::tableref::multiple::RefMulti;
 use crate::tableref::one::{Ref, RefMut};
@@ -9,6 +9,8 @@ use core::fmt;
 use crossbeam_utils::CachePadded;
 use hashbrown::{hash_table, HashTable};
 use std::convert::Infallible;
+
+pub(crate) type Shard<T> = CachePadded<RwLock<HashTable<T>>>;
 
 /// ClashMap is an implementation of a concurrent associative array/hashmap in Rust.
 ///
@@ -64,7 +66,7 @@ impl<T> ClashTable<T> {
     /// let map = ClashMap::<(), ()>::new();
     /// println!("Amount of shards: {}", map.shards().len());
     /// ```
-    pub fn shards(&self) -> &[CachePadded<RwLock<HashMap<T>>>] {
+    pub fn shards(&self) -> &[Shard<T>] {
         &self.shards
     }
 
@@ -106,29 +108,6 @@ impl<T> ClashTable<T> {
         self.shards
     }
 
-    /// Finds which shard a certain key is stored in.
-    /// You should probably not use this unless you know what you are doing.
-    /// Note that shard selection is dependent on the default or provided HashBuilder.
-    ///
-    /// Requires the `raw-api` feature to be enabled.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use clashmap::ClashMap;
-    ///
-    /// let map = ClashMap::new();
-    /// map.insert("coca-cola", 1.4);
-    /// println!("coca-cola is stored in shard: {}", map.determine_map("coca-cola"));
-    /// ```
-    pub fn determine_map<Q>(&self, hash: u64, key: &Q) -> usize
-    where
-        Q: Hash + Equivalent<K> + ?Sized,
-    {
-        let hash = self.hash_usize(&key);
-        self._determine_shard(hash)
-    }
-
     /// Finds which shard a certain hash is stored in.
     ///
     /// Requires the `raw-api` feature to be enabled.
@@ -143,7 +122,7 @@ impl<T> ClashTable<T> {
     /// let hash = map.hash_usize(&key);
     /// println!("hash is stored in shard: {}", map.determine_shard(hash));
     /// ```
-    pub fn determine_shard(&self, hash: u64, hash: usize) -> usize {
+    pub fn determine_shard(&self, hash: usize) -> usize {
         self._determine_shard(hash)
     }
 }
@@ -468,7 +447,7 @@ impl<T> ClashTable<T> {
     /// let result2 = map.try_get_mut("Johnny");
     /// assert!(result2.is_locked());
     /// ```
-    pub fn try_get_mut(&self, hash: u64, eq: impl FnMut(&T) -> bool) -> TryResult<RefMut<'_, T>> {
+    pub fn try_find_mut(&self, hash: u64, eq: impl FnMut(&T) -> bool) -> TryResult<RefMut<'_, T>> {
         let idx = self._determine_shard(hash as usize);
 
         let shard = match self.shards[idx].try_write() {
@@ -619,6 +598,28 @@ impl<T> ClashTable<T> {
     /// See the documentation on `clashmap::mapref::entry` for more details.
     ///
     /// **Locking behaviour:** May deadlock if called when holding any sort of reference into the map.
+    pub fn find_entry(
+        &self,
+        hash: u64,
+        eq: impl FnMut(&T) -> bool,
+    ) -> Result<OccupiedEntry<'_, T>, AbsentEntry<'_, T>> {
+        let idx = self._determine_shard(hash as usize);
+
+        let shard = self.shards[idx].write();
+
+        // SAFETY: The data will not outlive the guard, since we pass the guard to `Entry`.
+        let (guard, shard) = unsafe { RwLockWriteGuardDetached::detach_from(shard) };
+
+        match shard.find_entry(hash, eq) {
+            Ok(occupied_entry) => Ok(OccupiedEntry::new(guard, occupied_entry)),
+            Err(absent_entry) => Err(AbsentEntry::new(guard, absent_entry)),
+        }
+    }
+
+    /// Advanced entry API that tries to mimic `std::collections::HashMap`.
+    /// See the documentation on `clashmap::mapref::entry` for more details.
+    ///
+    /// **Locking behaviour:** May deadlock if called when holding any sort of reference into the map.
     pub fn entry(
         &self,
         hash: u64,
@@ -725,31 +726,21 @@ impl<'a, T> IntoIterator for &'a ClashTable<T> {
 #[cfg(feature = "typesize")]
 impl<T> typesize::TypeSize for ClashTable<T>
 where
-    K: typesize::TypeSize + Eq + Hash,
-    V: typesize::TypeSize,
-    S: typesize::TypeSize + BuildHasher,
+    T: typesize::TypeSize,
 {
     fn extra_size(&self) -> usize {
-        let shards_extra_size: usize = self
-            .shards
+        self.shards
             .iter()
             .map(|shard_lock| {
                 let shard = shard_lock.read();
 
                 let hashtable_size = shard.allocation_size();
 
-                let entry_size_iter = shard.iter().map(|entry| {
-                    let (key, value) = entry;
-                    key.extra_size() + value.extra_size()
-                });
+                let entry_size_iter = shard.iter().map(|entry| entry.extra_size());
 
-                core::mem::size_of::<CachePadded<RwLock<HashMap<T>>>>()
-                    + hashtable_size
-                    + entry_size_iter.sum::<usize>()
+                core::mem::size_of::<Shard<T>>() + hashtable_size + entry_size_iter.sum::<usize>()
             })
-            .sum();
-
-        self.hasher.extra_size() + shards_extra_size
+            .sum()
     }
 
     typesize::if_typesize_details! {

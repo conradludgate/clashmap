@@ -1,8 +1,5 @@
-use hashbrown::hash_table;
-
 use super::one::RefMut;
-use crate::lock::RwLockWriteGuardDetached;
-use crate::OccupiedEntry;
+use crate::{tableref, OccupiedEntry};
 
 pub enum EntryRef<'a, K, V> {
     Occupied(OccupiedEntry<'a, K, V>),
@@ -111,24 +108,17 @@ pub enum EntryRef<'a, K, V> {
 // }
 
 pub struct VacantEntryRef<'a, K, V> {
-    guard: RwLockWriteGuardDetached<'a>,
-    entry: hash_table::VacantEntry<'a, (K, V)>,
+    entry: tableref::entry::VacantEntry<'a, (K, V)>,
 }
 
 impl<'a, K, V> VacantEntryRef<'a, K, V> {
-    pub(crate) fn new(
-        guard: RwLockWriteGuardDetached<'a>,
-        entry: hash_table::VacantEntry<'a, (K, V)>,
-    ) -> Self {
-        Self { guard, entry }
+    pub(crate) fn new(entry: tableref::entry::VacantEntry<'a, (K, V)>) -> Self {
+        Self { entry }
     }
 
     pub fn insert(self, key: K, value: V) -> RefMut<'a, K, V> {
         let occupied = self.entry.insert((key, value));
-
-        let (k, v) = occupied.into_mut();
-
-        RefMut::new(self.guard, k, v)
+        RefMut::from(occupied)
     }
 
     /// Sets the value of the entry with the VacantEntry’s key, and returns an OccupiedEntry.
@@ -136,9 +126,8 @@ impl<'a, K, V> VacantEntryRef<'a, K, V> {
     where
         K: Clone,
     {
-        let entry = self.entry.insert((key.clone(), value));
-
-        OccupiedEntry::new(self.guard, key, entry)
+        let entry = self.entry.insert_entry((key.clone(), value));
+        OccupiedEntry::new(entry, key)
     }
 }
 

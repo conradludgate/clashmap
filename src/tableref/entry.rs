@@ -91,6 +91,23 @@ impl<'a, T> Entry<'a, T> {
     }
 }
 
+pub struct AbsentEntry<'a, T> {
+    _guard: RwLockWriteGuardDetached<'a>,
+    _entry: hash_table::AbsentEntry<'a, T>,
+}
+
+impl<'a, T> AbsentEntry<'a, T> {
+    pub(crate) fn new(
+        guard: RwLockWriteGuardDetached<'a>,
+        entry: hash_table::AbsentEntry<'a, T>,
+    ) -> Self {
+        Self {
+            _entry: entry,
+            _guard: guard,
+        }
+    }
+}
+
 pub struct VacantEntry<'a, T> {
     guard: RwLockWriteGuardDetached<'a>,
     entry: hash_table::VacantEntry<'a, T>,
