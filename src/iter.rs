@@ -1,3 +1,5 @@
+use hashbrown::hash_table;
+
 use super::mapref::multiple::{RefMulti, RefMutMulti};
 use crate::lock::{RwLockReadGuardDetached, RwLockWriteGuardDetached};
 use crate::{ClashMap, Shard};
@@ -32,7 +34,7 @@ impl<K: Eq + Hash, V> OwningIter<K, V> {
     }
 }
 
-type GuardOwningIter<K, V> = hashbrown::hash_table::IntoIter<(K, V)>;
+type GuardOwningIter<K, V> = hash_table::IntoIter<(K, V)>;
 
 impl<K: Eq + Hash, V> Iterator for OwningIter<K, V> {
     type Item = (K, V);
@@ -55,12 +57,12 @@ impl<K: Eq + Hash, V> Iterator for OwningIter<K, V> {
 
 type GuardIter<'a, K, V> = (
     Arc<RwLockReadGuardDetached<'a>>,
-    hashbrown::hash_table::Iter<'a, (K, V)>,
+    hash_table::Iter<'a, (K, V)>,
 );
 
 type GuardIterMut<'a, K, V> = (
     Arc<RwLockWriteGuardDetached<'a>>,
-    hashbrown::hash_table::IterMut<'a, (K, V)>,
+    hash_table::IterMut<'a, (K, V)>,
 );
 
 /// Iterator over a ClashMap yielding immutable references.
