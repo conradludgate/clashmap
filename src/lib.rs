@@ -1,3 +1,4 @@
+#![doc = include_str!("../README.md")]
 #![warn(
     unsafe_op_in_unsafe_fn,
     clippy::missing_safety_doc,
@@ -28,7 +29,7 @@ pub mod rayon {
 use crate::lock::RwLock;
 
 #[cfg(feature = "raw-api")]
-pub use crate::lock::{RawRwLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
+pub use crate::lock::{RawRwLock, RwLock};
 
 use core::fmt;
 use core::hash::{BuildHasher, Hash, Hasher};
@@ -1050,12 +1051,10 @@ impl<K: Eq + Hash, V, S: BuildHasher> ClashMap<K, V, S> {
                 hasher.finish()
             },
         ) {
-            hash_table::Entry::Occupied(occupied_entry) => {
-                Entry::Occupied(OccupiedEntry::new(guard, key, occupied_entry))
+            hash_table::Entry::Occupied(entry) => {
+                Entry::Occupied(OccupiedEntry::new(guard, key, entry))
             }
-            hash_table::Entry::Vacant(vacant_entry) => {
-                Entry::Vacant(VacantEntry::new(guard, key, vacant_entry))
-            }
+            hash_table::Entry::Vacant(entry) => Entry::Vacant(VacantEntry::new(guard, key, entry)),
         }
     }
 
@@ -1081,11 +1080,11 @@ impl<K: Eq + Hash, V, S: BuildHasher> ClashMap<K, V, S> {
                 hasher.finish()
             },
         ) {
-            hash_table::Entry::Occupied(occupied_entry) => Some(Entry::Occupied(
-                OccupiedEntry::new(guard, key, occupied_entry),
-            )),
-            hash_table::Entry::Vacant(vacant_entry) => {
-                Some(Entry::Vacant(VacantEntry::new(guard, key, vacant_entry)))
+            hash_table::Entry::Occupied(entry) => {
+                Some(Entry::Occupied(OccupiedEntry::new(guard, key, entry)))
+            }
+            hash_table::Entry::Vacant(entry) => {
+                Some(Entry::Vacant(VacantEntry::new(guard, key, entry)))
             }
         }
     }

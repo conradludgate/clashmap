@@ -140,6 +140,7 @@ where
                 // SAFETY: we keep the guard alive with the shard iterator,
                 // and with any refs produced by the iterator
                 let (guard, shard) = unsafe { RwLockReadGuardDetached::detach_from(shard.read()) };
+
                 let guard = Arc::new(guard);
                 shard.iter().map(move |(k, v)| {
                     let guard = Arc::clone(&guard);
@@ -201,6 +202,7 @@ where
                 // and with any refs produced by the iterator
                 let (guard, shard) =
                     unsafe { RwLockWriteGuardDetached::detach_from(shard.write()) };
+
                 let guard = Arc::new(guard);
                 shard.iter_mut().map(move |(k, v)| {
                     let guard = Arc::clone(&guard);
