@@ -111,7 +111,7 @@ where
     }
 }
 
-impl<K: Eq + Hash, V> ClashMap<K, V, RandomState> {
+impl<K, V> ClashMap<K, V, RandomState> {
     /// Creates a new ClashMap with a capacity of 0.
     ///
     /// # Examples
@@ -281,7 +281,7 @@ impl<K: Eq + Hash, V, S: BuildHasher> ClashMap<K, V, S> {
     }
 }
 
-impl<K: Eq + Hash, V, S: BuildHasher> ClashMap<K, V, S> {
+impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
     /// Wraps this `ClashMap` into a read-only view. This view allows to obtain raw references to the stored values.
     pub fn into_read_only(self) -> ReadOnlyView<K, V, S> {
         ReadOnlyView::new(self)
@@ -449,7 +449,10 @@ impl<K: Eq + Hash, V, S: BuildHasher> ClashMap<K, V, S> {
     /// let map = ClashMap::new();
     /// map.insert("I am the key!", "And I am the value!");
     /// ```
-    pub fn insert(&self, key: K, value: V) -> Option<V> {
+    pub fn insert(&self, key: K, value: V) -> Option<V>
+    where
+        K: Eq + Hash,
+    {
         match self.entry(key) {
             Entry::Occupied(mut o) => Some(o.insert(value)),
             Entry::Vacant(v) => {
@@ -469,7 +472,10 @@ impl<K: Eq + Hash, V, S: BuildHasher> ClashMap<K, V, S> {
     /// let mut map = ClashMap::new();
     /// map.insert_mut("I am the key!", "And I am the value!");
     /// ```
-    pub fn insert_mut(&mut self, key: K, value: V) -> Option<V> {
+    pub fn insert_mut(&mut self, key: K, value: V) -> Option<V>
+    where
+        K: Eq + Hash,
+    {
         match self.entry_mut(key) {
             EntryMut::Occupied(mut o) => Some(o.insert(value)),
             EntryMut::Vacant(v) => {
@@ -805,7 +811,10 @@ impl<K: Eq + Hash, V, S: BuildHasher> ClashMap<K, V, S> {
     /// map.shrink_to_fit();
     /// assert_eq!(map.capacity(), 0);
     /// ```
-    pub fn shrink_to_fit(&self) {
+    pub fn shrink_to_fit(&self)
+    where
+        K: Hash,
+    {
         self.shards.iter().for_each(|s| {
             let mut shard = s.write();
             let size = shard.len();
@@ -1006,7 +1015,10 @@ impl<K: Eq + Hash, V, S: BuildHasher> ClashMap<K, V, S> {
     }
 
     /// Advanced entry API that tries to mimic `std::collections::HashMap`.
-    pub fn entry_mut(&mut self, key: K) -> EntryMut<'_, K, V> {
+    pub fn entry_mut(&mut self, key: K) -> EntryMut<'_, K, V>
+    where
+        K: Eq + Hash,
+    {
         let hash = self.hash_u64(&key);
         let idx = self._determine_shard(hash as usize);
         let shard = self.shards[idx].get_mut();
@@ -1033,7 +1045,10 @@ impl<K: Eq + Hash, V, S: BuildHasher> ClashMap<K, V, S> {
     /// See the documentation on `clashmap::mapref::entry` for more details.
     ///
     /// **Locking behaviour:** May deadlock if called when holding any sort of reference into the map.
-    pub fn entry(&self, key: K) -> Entry<'_, K, V> {
+    pub fn entry(&self, key: K) -> Entry<'_, K, V>
+    where
+        K: Eq + Hash,
+    {
         let hash = self.hash_u64(&key);
         let idx = self._determine_shard(hash as usize);
 
@@ -1062,7 +1077,10 @@ impl<K: Eq + Hash, V, S: BuildHasher> ClashMap<K, V, S> {
     /// See the documentation on `clashmap::mapref::entry` for more details.
     ///
     /// Returns None if the shard is currently locked.
-    pub fn try_entry(&self, key: K) -> Option<Entry<'_, K, V>> {
+    pub fn try_entry(&self, key: K) -> Option<Entry<'_, K, V>>
+    where
+        K: Eq + Hash,
+    {
         let hash = self.hash_u64(&key);
         let idx = self._determine_shard(hash as usize);
 
@@ -1097,7 +1115,10 @@ impl<K: Eq + Hash, V, S: BuildHasher> ClashMap<K, V, S> {
     ///
     /// If the capacity overflows, or the allocator reports a failure, then an error is returned.
     // TODO: return std::collections::TryReserveError once std::collections::TryReserveErrorKind stabilises.
-    pub fn try_reserve(&mut self, additional: usize) -> Result<(), TryReserveError> {
+    pub fn try_reserve(&mut self, additional: usize) -> Result<(), TryReserveError>
+    where
+        K: Hash,
+    {
         for shard in self.shards.iter() {
             shard
                 .write()

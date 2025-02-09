@@ -3,7 +3,7 @@ use hashbrown::hash_table;
 use super::mapref::multiple::{RefMulti, RefMutMulti};
 use crate::lock::{RwLockReadGuardDetached, RwLockWriteGuardDetached};
 use crate::{ClashMap, Shard};
-use core::hash::{BuildHasher, Hash};
+use core::hash::BuildHasher;
 use core::slice;
 use std::sync::Arc;
 
@@ -25,7 +25,7 @@ pub struct OwningIter<K, V> {
     current: Option<GuardOwningIter<K, V>>,
 }
 
-impl<K: Eq + Hash, V> OwningIter<K, V> {
+impl<K, V> OwningIter<K, V> {
     pub(crate) fn new<S: BuildHasher>(map: ClashMap<K, V, S>) -> Self {
         Self {
             shards: map.shards.into_vec().into_iter(),
@@ -36,7 +36,7 @@ impl<K: Eq + Hash, V> OwningIter<K, V> {
 
 type GuardOwningIter<K, V> = hash_table::IntoIter<(K, V)>;
 
-impl<K: Eq + Hash, V> Iterator for OwningIter<K, V> {
+impl<K, V> Iterator for OwningIter<K, V> {
     type Item = (K, V);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -88,7 +88,7 @@ impl<K, V> Clone for Iter<'_, K, V> {
     }
 }
 
-impl<'a, K: 'a + Eq + Hash, V: 'a> Iter<'a, K, V> {
+impl<'a, K: 'a, V: 'a> Iter<'a, K, V> {
     pub(crate) fn new<S: BuildHasher>(map: &'a ClashMap<K, V, S>) -> Self {
         Self {
             shards: map.shards.iter(),
@@ -97,7 +97,7 @@ impl<'a, K: 'a + Eq + Hash, V: 'a> Iter<'a, K, V> {
     }
 }
 
-impl<'a, K: 'a + Eq + Hash, V: 'a> Iterator for Iter<'a, K, V> {
+impl<'a, K: 'a, V: 'a> Iterator for Iter<'a, K, V> {
     type Item = RefMulti<'a, K, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -138,7 +138,7 @@ pub struct IterMut<'a, K, V> {
     current: Option<GuardIterMut<'a, K, V>>,
 }
 
-impl<'a, K: 'a + Eq + Hash, V: 'a> IterMut<'a, K, V> {
+impl<'a, K: 'a, V: 'a> IterMut<'a, K, V> {
     pub(crate) fn new<S: BuildHasher>(map: &'a ClashMap<K, V, S>) -> Self {
         Self {
             shards: map.shards.iter(),
@@ -147,7 +147,7 @@ impl<'a, K: 'a + Eq + Hash, V: 'a> IterMut<'a, K, V> {
     }
 }
 
-impl<'a, K: 'a + Eq + Hash, V: 'a> Iterator for IterMut<'a, K, V> {
+impl<'a, K: 'a, V: 'a> Iterator for IterMut<'a, K, V> {
     type Item = RefMutMulti<'a, K, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
