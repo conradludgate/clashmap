@@ -40,6 +40,7 @@ use hashbrown::{hash_table, Equivalent};
 use iter::{Iter, IterMut, OwningIter};
 use lock::{RwLockReadGuardDetached, RwLockWriteGuardDetached};
 pub use mapref::entry::{Entry, OccupiedEntry, VacantEntry};
+pub use mapref::entry_ref::{EntryRef, VacantEntryRef};
 use mapref::entrymut::{EntryMut, OccupiedEntryMut, VacantEntryMut};
 use mapref::multiple::RefMulti;
 use mapref::one::{Ref, RefMut};
@@ -1073,6 +1074,38 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
         }
     }
 
+    /// Advanced entry API that tries to mimic `std::collections::HashMap`.
+    /// See the documentation on `clashmap::mapref::entry` for more details.
+    ///
+    /// **Locking behaviour:** May deadlock if called when holding any sort of reference into the map.
+    pub fn entry_ref<Q>(&self, key: &Q) -> EntryRef<'_, K, V>
+    where
+        Q: Hash + Equivalent<K> + ?Sized,
+        K: Clone + Hash,
+    {
+        let hash = self.hash_u64(&key);
+        let idx = self._determine_shard(hash as usize);
+
+        let shard = self.shards[idx].write();
+
+        // SAFETY: The data will not outlive the guard, since we pass the guard to `Entry`.
+        let (guard, shard) = unsafe { RwLockWriteGuardDetached::detach_from(shard) };
+
+        match shard.entry(
+            hash,
+            |(k, _v)| key.equivalent(k),
+            |(k, _v)| {
+                let mut hasher = self.hasher.build_hasher();
+                k.hash(&mut hasher);
+                hasher.finish()
+            },
+        ) {
+            hash_table::Entry::Occupied(entry) => {
+                EntryRef::Occupied(OccupiedEntry::new(guard, entry.get().0.clone(), entry))
+            }
+            hash_table::Entry::Vacant(entry) => EntryRef::Vacant(VacantEntryRef::new(guard, entry)),
+        }
+    }
     /// Advanced entry API that tries to mimic `std::collections::HashMap`.
     /// See the documentation on `clashmap::mapref::entry` for more details.
     ///
