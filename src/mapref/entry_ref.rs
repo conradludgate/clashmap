@@ -132,13 +132,10 @@ impl<'a, K, V> VacantEntryRef<'a, K, V> {
     }
 
     /// Sets the value of the entry with the VacantEntry’s key, and returns an OccupiedEntry.
-    pub fn insert_entry(self, key: K, value: V) -> OccupiedEntry<'a, K, V>
-    where
-        K: Clone,
-    {
-        let entry = self.entry.insert((key.clone(), value));
+    pub fn insert_entry(self, key: K, value: V) -> OccupiedEntry<'a, K, V> {
+        let entry = self.entry.insert((key, value));
 
-        OccupiedEntry::new(self.guard, key, entry)
+        OccupiedEntry::new(self.guard, entry)
     }
 }
 

@@ -31,14 +31,6 @@ impl<'a, K, V> Entry<'a, K, V> {
         }
     }
 
-    /// Into the key of the entry.
-    pub fn into_key(self) -> K {
-        match self {
-            Entry::Occupied(entry) => entry.into_key(),
-            Entry::Vacant(entry) => entry.into_key(),
-        }
-    }
-
     /// Return a mutable reference to the element if it exists,
     /// otherwise insert the default and return a mutable reference to that.
     pub fn or_default(self) -> RefMut<'a, K, V>
@@ -134,13 +126,10 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
     }
 
     /// Sets the value of the entry with the VacantEntry’s key, and returns an OccupiedEntry.
-    pub fn insert_entry(self, value: V) -> OccupiedEntry<'a, K, V>
-    where
-        K: Clone,
-    {
-        let entry = self.entry.insert((self.key.clone(), value));
+    pub fn insert_entry(self, value: V) -> OccupiedEntry<'a, K, V> {
+        let entry = self.entry.insert((self.key, value));
 
-        OccupiedEntry::new(self.guard, self.key, entry)
+        OccupiedEntry::new(self.guard, entry)
     }
 
     pub fn into_key(self) -> K {
@@ -155,16 +144,14 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
 pub struct OccupiedEntry<'a, K, V> {
     guard: RwLockWriteGuardDetached<'a>,
     entry: hash_table::OccupiedEntry<'a, (K, V)>,
-    key: K,
 }
 
 impl<'a, K, V> OccupiedEntry<'a, K, V> {
     pub(crate) fn new(
         guard: RwLockWriteGuardDetached<'a>,
-        key: K,
         entry: hash_table::OccupiedEntry<'a, (K, V)>,
     ) -> Self {
-        Self { guard, key, entry }
+        Self { guard, entry }
     }
 
     pub fn get(&self) -> &V {
@@ -184,10 +171,6 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
         RefMut::new(self.guard, k, v)
     }
 
-    pub fn into_key(self) -> K {
-        self.key
-    }
-
     pub fn key(&self) -> &K {
         &self.entry.get().0
     }
@@ -202,9 +185,9 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
         (k, v)
     }
 
-    pub fn replace_entry(self, value: V) -> (K, V) {
-        let (k, v) = mem::replace(self.entry.into_mut(), (self.key, value));
-        (k, v)
+    pub fn replace_entry(self, value: V) -> V {
+        let v = mem::replace(&mut self.entry.into_mut().1, value);
+        v
     }
 }
 

@@ -1067,9 +1067,7 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
                 hasher.finish()
             },
         ) {
-            hash_table::Entry::Occupied(entry) => {
-                Entry::Occupied(OccupiedEntry::new(guard, key, entry))
-            }
+            hash_table::Entry::Occupied(entry) => Entry::Occupied(OccupiedEntry::new(guard, entry)),
             hash_table::Entry::Vacant(entry) => Entry::Vacant(VacantEntry::new(guard, key, entry)),
         }
     }
@@ -1101,7 +1099,7 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
             },
         ) {
             hash_table::Entry::Occupied(entry) => {
-                EntryRef::Occupied(OccupiedEntry::new(guard, entry.get().0.clone(), entry))
+                EntryRef::Occupied(OccupiedEntry::new(guard, entry))
             }
             hash_table::Entry::Vacant(entry) => EntryRef::Vacant(VacantEntryRef::new(guard, entry)),
         }
@@ -1132,7 +1130,7 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
             },
         ) {
             hash_table::Entry::Occupied(entry) => {
-                Some(Entry::Occupied(OccupiedEntry::new(guard, key, entry)))
+                Some(Entry::Occupied(OccupiedEntry::new(guard, entry)))
             }
             hash_table::Entry::Vacant(entry) => {
                 Some(Entry::Vacant(VacantEntry::new(guard, key, entry)))
