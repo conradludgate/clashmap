@@ -175,12 +175,18 @@ impl<'a, T> OccupiedEntry<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use std::hash::BuildHasher;
-    use std::hash::RandomState;
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hash, Hasher};
 
     use crate::ClashTable;
 
     use super::*;
+
+    fn hash_one(s: &impl BuildHasher, h: impl Hash) -> u64 {
+        let mut s = s.build_hasher();
+        h.hash(&mut s);
+        s.finish()
+    }
 
     #[test]
     fn test_insert_entry_into_vacant() {
@@ -188,9 +194,9 @@ mod tests {
         let hasher = RandomState::new();
 
         let entry = map.entry(
-            hasher.hash_one(1),
+            hash_one(&hasher, 1),
             |&(t, _)| t == 1,
-            |(t, _)| hasher.hash_one(t),
+            |(t, _)| hash_one(&hasher, t),
         );
 
         assert!(matches!(entry, Entry::Vacant(_)));
@@ -202,7 +208,7 @@ mod tests {
         drop(entry);
 
         assert_eq!(
-            *map.find(hasher.hash_one(1), |&(t, _)| t == 1,).unwrap(),
+            *map.find(hash_one(&hasher, 1), |&(t, _)| t == 1,).unwrap(),
             (1, 2)
         );
     }
@@ -214,17 +220,17 @@ mod tests {
 
         {
             map.entry(
-                hasher.hash_one(1),
+                hash_one(&hasher, 1),
                 |&(t, _)| t == 1,
-                |(t, _)| hasher.hash_one(t),
+                |(t, _)| hash_one(&hasher, t),
             )
             .or_insert((1, 1));
         }
 
         let entry = map.entry(
-            hasher.hash_one(1),
+            hash_one(&hasher, 1),
             |&(t, _)| t == 1,
-            |(t, _)| hasher.hash_one(t),
+            |(t, _)| hash_one(&hasher, t),
         );
 
         assert!(matches!(&entry, Entry::Occupied(entry) if *entry.get() == (1, 1)));
@@ -236,7 +242,7 @@ mod tests {
         drop(entry);
 
         assert_eq!(
-            *map.find(hasher.hash_one(1), |&(t, _)| t == 1,).unwrap(),
+            *map.find(hash_one(&hasher, 1), |&(t, _)| t == 1,).unwrap(),
             (1, 2)
         );
     }

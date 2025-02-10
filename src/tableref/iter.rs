@@ -138,10 +138,16 @@ impl<'a, T: 'a> Iterator for IterMut<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use std::hash::BuildHasher;
-    use std::hash::RandomState;
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hash, Hasher};
 
     use crate::ClashTable;
+
+    fn hash_one(s: &impl BuildHasher, h: impl Hash) -> u64 {
+        let mut s = s.build_hasher();
+        h.hash(&mut s);
+        s.finish()
+    }
 
     #[test]
     fn iter_mut_manual_count() {
@@ -149,9 +155,9 @@ mod tests {
         let hasher = RandomState::new();
 
         map.entry(
-            hasher.hash_one("Johnny"),
+            hash_one(&hasher, "Johnny"),
             |&t| t == "Johnny",
-            |t| hasher.hash_one(t),
+            |t| hash_one(&hasher, t),
         )
         .or_insert("Johnny");
 
@@ -172,9 +178,9 @@ mod tests {
         let hasher = RandomState::new();
 
         map.entry(
-            hasher.hash_one("Johnny"),
+            hash_one(&hasher, "Johnny"),
             |&t| t == "Johnny",
-            |t| hasher.hash_one(t),
+            |t| hash_one(&hasher, t),
         )
         .or_insert("Johnny");
         let c = map.into_iter().count();
@@ -188,9 +194,9 @@ mod tests {
         let hasher = RandomState::new();
 
         map.entry(
-            hasher.hash_one("Johnny"),
+            hash_one(&hasher, "Johnny"),
             |&t| t == "Johnny",
-            |t| hasher.hash_one(t),
+            |t| hash_one(&hasher, t),
         )
         .or_insert("Johnny");
 
@@ -205,9 +211,9 @@ mod tests {
         let hasher = RandomState::new();
 
         map.entry(
-            hasher.hash_one("Johnny"),
+            hash_one(&hasher, "Johnny"),
             |&t| t == "Johnny",
-            |t| hasher.hash_one(t),
+            |t| hash_one(&hasher, t),
         )
         .or_insert("Johnny");
 
@@ -222,15 +228,15 @@ mod tests {
         let hasher = RandomState::new();
 
         map.entry(
-            hasher.hash_one("Johnny"),
+            hash_one(&hasher, "Johnny"),
             |&t| t == "Johnny",
-            |t| hasher.hash_one(t),
+            |t| hash_one(&hasher, t),
         )
         .or_insert("Johnny");
         map.entry(
-            hasher.hash_one("Chucky"),
+            hash_one(&hasher, "Chucky"),
             |&t| t == "Chucky",
-            |t| hasher.hash_one(t),
+            |t| hash_one(&hasher, t),
         )
         .or_insert("Chucky");
 
