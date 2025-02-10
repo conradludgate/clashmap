@@ -198,9 +198,9 @@ where
         self.shards
             .into_par_iter()
             .flat_map_iter(|shard| {
-                // SAFETY: we keep the guard alive with the shard iterator,
-                // and with any refs produced by the iterator
                 let (guard, shard) =
+                    // SAFETY: we keep the guard alive with the shard iterator,
+                    // and with any refs produced by the iterator
                     unsafe { RwLockWriteGuardDetached::detach_from(shard.write()) };
 
                 let guard = Arc::new(guard);
