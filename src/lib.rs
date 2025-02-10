@@ -10,8 +10,8 @@ pub mod iter;
 pub mod iter_set;
 pub mod mapref;
 pub mod setref;
-pub mod try_result;
 pub mod tableref;
+pub mod try_result;
 
 mod lock;
 mod map;
