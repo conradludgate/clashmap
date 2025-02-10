@@ -1,5 +1,6 @@
 use crate::lock::RwLock;
 use crate::ClashMap;
+use crate::ClashTable;
 use crate::HashMap;
 use core::fmt;
 use core::hash::{BuildHasher, Hash};
@@ -39,12 +40,13 @@ impl<K, V, S> ReadOnlyView<K, V, S> {
     pub(crate) fn new(map: ClashMap<K, V, S>) -> Self {
         Self {
             shards: map
+                .table
                 .shards
                 .into_vec()
                 .into_iter()
                 .map(|s| s.into_inner().into_inner())
                 .collect(),
-            shift: map.shift,
+            shift: map.table.shift,
             hasher: map.hasher,
         }
     }
@@ -52,13 +54,15 @@ impl<K, V, S> ReadOnlyView<K, V, S> {
     /// Consumes this `ReadOnlyView`, returning the underlying `ClashMap`.
     pub fn into_inner(self) -> ClashMap<K, V, S> {
         ClashMap {
-            shards: self
-                .shards
-                .into_vec()
-                .into_iter()
-                .map(|s| CachePadded::new(RwLock::new(s)))
-                .collect(),
-            shift: self.shift,
+            table: ClashTable {
+                shards: self
+                    .shards
+                    .into_vec()
+                    .into_iter()
+                    .map(|s| CachePadded::new(RwLock::new(s)))
+                    .collect(),
+                shift: self.shift,
+            },
             hasher: self.hasher,
         }
     }

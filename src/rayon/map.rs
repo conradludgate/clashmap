@@ -75,7 +75,7 @@ where
 
     fn into_par_iter(self) -> Self::Iter {
         OwningIter {
-            shards: self.shards,
+            shards: self.table.shards,
         }
     }
 }
@@ -114,7 +114,7 @@ where
 
     fn into_par_iter(self) -> Self::Iter {
         Iter {
-            shards: &self.shards,
+            shards: &self.table.shards,
         }
     }
 }
@@ -162,7 +162,7 @@ where
 
     fn into_par_iter(self) -> Self::Iter {
         IterMut {
-            shards: &self.shards,
+            shards: &self.table.shards,
         }
     }
 }
@@ -175,7 +175,7 @@ where
     // Unlike `IntoParallelRefMutIterator::par_iter_mut`, we only _need_ `&self`.
     pub fn par_iter_mut(&self) -> IterMut<'_, K, V> {
         IterMut {
-            shards: &self.shards,
+            shards: &self.table.shards,
         }
     }
 }
@@ -198,9 +198,9 @@ where
         self.shards
             .into_par_iter()
             .flat_map_iter(|shard| {
-                // SAFETY: we keep the guard alive with the shard iterator,
-                // and with any refs produced by the iterator
                 let (guard, shard) =
+                    // SAFETY: we keep the guard alive with the shard iterator,
+                    // and with any refs produced by the iterator
                     unsafe { RwLockWriteGuardDetached::detach_from(shard.write()) };
 
                 let guard = Arc::new(guard);

@@ -17,6 +17,25 @@ where
     Err(t)
 }
 
+pub(crate) fn try_map2<F, K, V, T>(
+    mut t: &mut (K, V),
+    f: F,
+) -> Result<(&mut K, &mut T), &mut (K, V)>
+where
+    F: FnOnce(&mut V) -> Option<&mut T>,
+{
+    use polonius_the_crab::{polonius, polonius_return};
+    polonius!(
+        |t| -> Result<(&'polonius mut K, &'polonius mut T), &mut (K, V)> {
+            let (k, v) = t;
+            if let Some(u) = f(v) {
+                polonius_return!(Ok((k, u)));
+            }
+        }
+    );
+    Err(t)
+}
+
 /// A [`RwLockReadGuard`], without the data
 pub(crate) struct RwLockReadGuardDetached<'a, R: RawRwLock> {
     lock: &'a R,
