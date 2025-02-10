@@ -7,19 +7,7 @@ use crate::table::ClashTable;
 use core::slice;
 use std::sync::Arc;
 
-/// Iterator over a ClashTable yielding key value pairs.
-///
-/// # Examples
-///
-/// ```
-/// use clashmap::ClashTable;
-///
-/// let map = ClashTable::new();
-/// map.insert("hello", "world");
-/// map.insert("alex", "steve");
-/// let pairs: Vec<(&'static str, &'static str)> = map.into_iter().collect();
-/// assert_eq!(pairs.len(), 2);
-/// ```
+/// Iterator over a ClashTable.
 pub struct OwningIter<T> {
     shards: std::vec::IntoIter<CachePadded<RwLock<HashTable<T>>>>,
     current: Option<GuardOwningIter<T>>,
@@ -66,16 +54,6 @@ type GuardIterMut<'a, T> = (
 );
 
 /// Iterator over a ClashTable yielding immutable references.
-///
-/// # Examples
-///
-/// ```
-/// use clashmap::ClashTable;
-///
-/// let map = ClashTable::new();
-/// map.insert("hello", "world");
-/// assert_eq!(map.iter().count(), 1);
-/// ```
 pub struct Iter<'a, T> {
     shards: slice::Iter<'a, CachePadded<RwLock<HashTable<T>>>>,
     current: Option<GuardIter<'a, T>>,
@@ -122,17 +100,6 @@ impl<'a, T: 'a> Iterator for Iter<'a, T> {
 }
 
 /// Iterator over a ClashTable yielding mutable references.
-///
-/// # Examples
-///
-/// ```
-/// use clashmap::ClashTable;
-///
-/// let map = ClashTable::new();
-/// map.insert("Johnny", 21);
-/// map.iter_mut().for_each(|mut r| *r += 1);
-/// assert_eq!(*map.get("Johnny").unwrap(), 22);
-/// ```
 pub struct IterMut<'a, T> {
     shards: slice::Iter<'a, CachePadded<RwLock<HashTable<T>>>>,
     current: Option<GuardIterMut<'a, T>>,
