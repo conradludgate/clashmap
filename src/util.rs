@@ -4,7 +4,7 @@ use std::{marker::PhantomData, mem::ManuallyDrop};
 
 use lock_api::{RawRwLock, RawRwLockDowngrade, RwLockReadGuard, RwLockWriteGuard};
 
-pub(crate) fn try_map<F, T, U>(mut t: &mut T, f: F) -> Result<&mut U, &mut T>
+pub(crate) fn try_map<F, T: ?Sized, U: ?Sized>(mut t: &mut T, f: F) -> Result<&mut U, &mut T>
 where
     F: FnOnce(&mut T) -> Option<&mut U>,
 {
@@ -17,7 +17,7 @@ where
     Err(t)
 }
 
-pub(crate) fn try_map2<F, K, V, T>(
+pub(crate) fn try_map2<F, K, V: ?Sized, T: ?Sized>(
     mut t: &mut (K, V),
     f: F,
 ) -> Result<(&mut K, &mut T), &mut (K, V)>
@@ -115,11 +115,15 @@ impl<'a, R: RawRwLockDowngrade> RwLockWriteGuardDetached<'a, R> {
     ///
     /// The associated data must not mut mutated after downgrading
     pub(crate) unsafe fn downgrade(self) -> RwLockReadGuardDetached<'a, R> {
+        // Do not drop the write guard - otherwise we will trigger a downgrade + unlock_exclusive,
+        // which is incorrect
+        let this = ManuallyDrop::new(self);
+
         // Safety: An RwLockWriteGuardDetached always holds an exclusive lock.
-        unsafe { self.lock.downgrade() }
+        unsafe { this.lock.downgrade() }
         RwLockReadGuardDetached {
-            lock: self.lock,
-            _marker: self._marker,
+            lock: this.lock,
+            _marker: this._marker,
         }
     }
 }
