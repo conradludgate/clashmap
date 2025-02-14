@@ -1,11 +1,8 @@
 use hashbrown::hash_table;
 
 use super::mapref::multiple::{RefMulti, RefMutMulti};
-use crate::lock::{RwLockReadGuardDetached, RwLockWriteGuardDetached};
-use crate::{ClashMap, Shard};
+use crate::{tableref, ClashMap, Shard};
 use core::hash::BuildHasher;
-use core::slice;
-use std::sync::Arc;
 
 /// Iterator over a ClashMap yielding key value pairs.
 ///
@@ -53,16 +50,6 @@ impl<K, V> Iterator for OwningIter<K, V> {
     }
 }
 
-type GuardIter<'a, K, V> = (
-    Arc<RwLockReadGuardDetached<'a>>,
-    hash_table::Iter<'a, (K, V)>,
-);
-
-type GuardIterMut<'a, K, V> = (
-    Arc<RwLockWriteGuardDetached<'a>>,
-    hash_table::IterMut<'a, (K, V)>,
-);
-
 /// Iterator over a ClashMap yielding immutable references.
 ///
 /// # Examples
@@ -75,24 +62,21 @@ type GuardIterMut<'a, K, V> = (
 /// assert_eq!(map.iter().count(), 1);
 /// ```
 pub struct Iter<'a, K, V> {
-    shards: slice::Iter<'a, Shard<K, V>>,
-    current: Option<GuardIter<'a, K, V>>,
+    inner: tableref::iter::Iter<'a, (K, V)>,
 }
 
 impl<K, V> Clone for Iter<'_, K, V> {
     fn clone(&self) -> Self {
         Self {
-            shards: self.shards.clone(),
-            current: self.current.clone(),
+            inner: self.inner.clone(),
         }
     }
 }
 
 impl<'a, K: 'a, V: 'a> Iter<'a, K, V> {
-    pub(crate) fn new<S: BuildHasher>(map: &'a ClashMap<K, V, S>) -> Self {
+    pub(crate) fn new<S>(map: &'a ClashMap<K, V, S>) -> Self {
         Self {
-            shards: map.table.shards.iter(),
-            current: None,
+            inner: map.table.iter(),
         }
     }
 }
@@ -101,23 +85,8 @@ impl<'a, K: 'a, V: 'a> Iterator for Iter<'a, K, V> {
     type Item = RefMulti<'a, K, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if let Some(current) = self.current.as_mut() {
-                if let Some((k, v)) = current.1.next() {
-                    let guard = current.0.clone();
-                    return Some(RefMulti::new(guard, k, v));
-                }
-            }
-
-            let guard = self.shards.next()?.read();
-            // SAFETY: we keep the guard alive with the shard iterator,
-            // and with any refs produced by the iterator
-            let (guard, shard) = unsafe { RwLockReadGuardDetached::detach_from(guard) };
-
-            let iter = shard.iter();
-
-            self.current = Some((Arc::new(guard), iter));
-        }
+        let r = self.inner.next()?;
+        Some(RefMulti::new(r))
     }
 }
 
@@ -134,15 +103,13 @@ impl<'a, K: 'a, V: 'a> Iterator for Iter<'a, K, V> {
 /// assert_eq!(*map.get("Johnny").unwrap(), 22);
 /// ```
 pub struct IterMut<'a, K, V> {
-    shards: slice::Iter<'a, Shard<K, V>>,
-    current: Option<GuardIterMut<'a, K, V>>,
+    inner: tableref::iter::IterMut<'a, (K, V)>,
 }
 
 impl<'a, K: 'a, V: 'a> IterMut<'a, K, V> {
-    pub(crate) fn new<S: BuildHasher>(map: &'a ClashMap<K, V, S>) -> Self {
+    pub(crate) fn new<S>(map: &'a ClashMap<K, V, S>) -> Self {
         Self {
-            shards: map.table.shards.iter(),
-            current: None,
+            inner: map.table.iter_mut(),
         }
     }
 }
@@ -151,24 +118,8 @@ impl<'a, K: 'a, V: 'a> Iterator for IterMut<'a, K, V> {
     type Item = RefMutMulti<'a, K, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if let Some(current) = self.current.as_mut() {
-                if let Some((k, v)) = current.1.next() {
-                    let guard = current.0.clone();
-                    return Some(RefMutMulti::new(guard, k, v));
-                }
-            }
-
-            let guard = self.shards.next()?.write();
-
-            // SAFETY: we keep the guard alive with the shard iterator,
-            // and with any refs produced by the iterator
-            let (guard, shard) = unsafe { RwLockWriteGuardDetached::detach_from(guard) };
-
-            let iter = shard.iter_mut();
-
-            self.current = Some((Arc::new(guard), iter));
-        }
+        let r = self.inner.next()?;
+        Some(RefMutMulti::new(r))
     }
 }
 

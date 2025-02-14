@@ -21,13 +21,17 @@ pub struct ClashSet<K, S = RandomState> {
     pub(crate) inner: ClashMap<K, (), S>,
 }
 
-impl<K: Eq + Hash + fmt::Debug, S: BuildHasher> fmt::Debug for ClashSet<K, S> {
+impl<K: fmt::Debug, S> fmt::Debug for ClashSet<K, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.inner, f)
+        let mut set = f.debug_set();
+        self.inner.table.for_each(|(k, _)| {
+            set.entry(k);
+        });
+        set.finish()
     }
 }
 
-impl<K: Eq + Hash + Clone, S: Clone> Clone for ClashSet<K, S> {
+impl<K: Clone, S: Clone> Clone for ClashSet<K, S> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -255,23 +259,6 @@ impl<'a, K: 'a + Eq + Hash, S: BuildHasher> ClashSet<K, S> {
         self.inner.remove_if(key, |k, _| f(k)).map(|(k, _)| k)
     }
 
-    /// Creates an iterator over a ClashMap yielding immutable references.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use clashmap::ClashSet;
-    ///
-    /// let words = ClashSet::new();
-    /// words.insert("hello");
-    /// assert_eq!(words.iter().count(), 1);
-    /// ```
-    pub fn iter(&self) -> Iter<'_, K> {
-        let iter = self.inner.iter();
-
-        Iter::new(iter)
-    }
-
     /// Get a reference to an entry in the set
     ///
     /// # Examples
@@ -383,6 +370,25 @@ impl<'a, K: 'a + Eq + Hash, S: BuildHasher> ClashSet<K, S> {
         Q: Hash + Equivalent<K> + ?Sized,
     {
         self.inner.contains_key(key)
+    }
+}
+
+impl<K, S> ClashSet<K, S> {
+    /// Creates an iterator over a ClashMap yielding immutable references.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use clashmap::ClashSet;
+    ///
+    /// let words = ClashSet::new();
+    /// words.insert("hello");
+    /// assert_eq!(words.iter().count(), 1);
+    /// ```
+    pub fn iter(&self) -> Iter<'_, K> {
+        let iter = self.inner.iter();
+
+        Iter::new(iter)
     }
 }
 

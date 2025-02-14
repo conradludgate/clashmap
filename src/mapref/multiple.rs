@@ -1,42 +1,34 @@
-use crate::lock::{RwLockReadGuardDetached, RwLockWriteGuardDetached};
+use crate::tableref;
 use core::ops::{Deref, DerefMut};
-use std::sync::Arc;
 
 pub struct RefMulti<'a, K, V> {
-    _guard: Arc<RwLockReadGuardDetached<'a>>,
-    k: &'a K,
-    v: &'a V,
+    inner: tableref::multiple::RefMulti<'a, (K, V)>,
 }
 
 impl<K, V> Clone for RefMulti<'_, K, V> {
     fn clone(&self) -> Self {
         Self {
-            _guard: self._guard.clone(),
-            k: self.k,
-            v: self.v,
+            inner: self.inner.clone(),
         }
     }
 }
 
 impl<'a, K, V> RefMulti<'a, K, V> {
-    pub(crate) fn new(guard: Arc<RwLockReadGuardDetached<'a>>, k: &'a K, v: &'a V) -> Self {
-        Self {
-            _guard: guard,
-            k,
-            v,
-        }
+    pub(crate) fn new(inner: tableref::multiple::RefMulti<'a, (K, V)>) -> Self {
+        Self { inner }
     }
 
     pub fn key(&self) -> &K {
-        self.k
+        &self.inner.value().0
     }
 
     pub fn value(&self) -> &V {
-        self.v
+        &self.inner.value().1
     }
 
     pub fn pair(&self) -> (&K, &V) {
-        (self.k, self.v)
+        let (k, v) = self.inner.value();
+        (k, v)
     }
 }
 
@@ -49,38 +41,34 @@ impl<K, V> Deref for RefMulti<'_, K, V> {
 }
 
 pub struct RefMutMulti<'a, K, V> {
-    _guard: Arc<RwLockWriteGuardDetached<'a>>,
-    k: &'a K,
-    v: &'a mut V,
+    inner: tableref::multiple::RefMutMulti<'a, (K, V)>,
 }
 
 impl<'a, K, V> RefMutMulti<'a, K, V> {
-    pub(crate) fn new(guard: Arc<RwLockWriteGuardDetached<'a>>, k: &'a K, v: &'a mut V) -> Self {
-        Self {
-            _guard: guard,
-            k,
-            v,
-        }
+    pub(crate) fn new(inner: tableref::multiple::RefMutMulti<'a, (K, V)>) -> Self {
+        Self { inner }
     }
 
     pub fn key(&self) -> &K {
-        self.k
+        &self.inner.value().0
     }
 
     pub fn value(&self) -> &V {
-        self.v
+        &self.inner.value().1
     }
 
     pub fn value_mut(&mut self) -> &mut V {
-        self.v
+        &mut self.inner.value_mut().1
     }
 
     pub fn pair(&self) -> (&K, &V) {
-        (self.k, self.v)
+        let (k, v) = self.inner.value();
+        (k, v)
     }
 
     pub fn pair_mut(&mut self) -> (&K, &mut V) {
-        (self.k, self.v)
+        let (k, v) = self.inner.value_mut();
+        (k, v)
     }
 }
 

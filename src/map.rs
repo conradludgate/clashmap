@@ -315,9 +315,7 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
 
     fn hash_u64<T: Hash>(&self, item: &T) -> u64 {
         let mut hasher = self.hasher.build_hasher();
-
         item.hash(&mut hasher);
-
         hasher.finish()
     }
 
@@ -466,41 +464,6 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
             }
             _ => None,
         }
-    }
-
-    /// Creates an iterator over a ClashMap yielding immutable references.
-    ///
-    /// **Locking behaviour:** May deadlock if called when holding a mutable reference into the map.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use clashmap::ClashMap;
-    ///
-    /// let words = ClashMap::new();
-    /// words.insert("hello", "world");
-    /// assert_eq!(words.iter().count(), 1);
-    /// ```
-    pub fn iter(&self) -> Iter<'_, K, V> {
-        Iter::new(self)
-    }
-
-    /// Iterator over a ClashMap yielding mutable references.
-    ///
-    /// **Locking behaviour:** May deadlock if called when holding any sort of reference into the map.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use clashmap::ClashMap;
-    ///
-    /// let map = ClashMap::new();
-    /// map.insert("Johnny", 21);
-    /// map.iter_mut().for_each(|mut r| *r += 1);
-    /// assert_eq!(*map.get("Johnny").unwrap(), 22);
-    /// ```
-    pub fn iter_mut(&self) -> IterMut<'_, K, V> {
-        IterMut::new(self)
     }
 
     /// Get an immutable reference to an entry in the map
@@ -956,6 +919,43 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
             k.hash(&mut hasher);
             hasher.finish()
         })
+    }
+}
+
+impl<K, V, S> ClashMap<K, V, S> {
+    /// Creates an iterator over a ClashMap yielding immutable references.
+    ///
+    /// **Locking behaviour:** May deadlock if called when holding a mutable reference into the map.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use clashmap::ClashMap;
+    ///
+    /// let words = ClashMap::new();
+    /// words.insert("hello", "world");
+    /// assert_eq!(words.iter().count(), 1);
+    /// ```
+    pub fn iter(&self) -> Iter<'_, K, V> {
+        Iter::new(self)
+    }
+
+    /// Iterator over a ClashMap yielding mutable references.
+    ///
+    /// **Locking behaviour:** May deadlock if called when holding any sort of reference into the map.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use clashmap::ClashMap;
+    ///
+    /// let map = ClashMap::new();
+    /// map.insert("Johnny", 21);
+    /// map.iter_mut().for_each(|mut r| *r += 1);
+    /// assert_eq!(*map.get("Johnny").unwrap(), 22);
+    /// ```
+    pub fn iter_mut(&self) -> IterMut<'_, K, V> {
+        IterMut::new(self)
     }
 }
 

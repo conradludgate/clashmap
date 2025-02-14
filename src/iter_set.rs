@@ -31,13 +31,13 @@ impl<K> Clone for Iter<'_, K> {
     }
 }
 
-impl<'a, K: 'a + Eq + Hash> Iter<'a, K> {
+impl<'a, K: 'a> Iter<'a, K> {
     pub(crate) fn new(inner: crate::iter::Iter<'a, K, ()>) -> Self {
         Self { inner }
     }
 }
 
-impl<'a, K: 'a + Eq + Hash> Iterator for Iter<'a, K> {
+impl<'a, K: 'a> Iterator for Iter<'a, K> {
     type Item = RefMulti<'a, K>;
 
     fn next(&mut self) -> Option<Self::Item> {

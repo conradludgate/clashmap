@@ -1,6 +1,6 @@
 use crate::lock::{RwLock, RwLockReadGuardDetached, RwLockWriteGuardDetached};
 use crate::mapref::multiple::{RefMulti, RefMutMulti};
-use crate::{ClashMap, HashMap, Shard};
+use crate::{tableref, ClashMap, HashMap, Shard};
 use core::hash::{BuildHasher, Hash};
 use crossbeam_utils::CachePadded;
 use rayon::iter::plumbing::UnindexedConsumer;
@@ -142,9 +142,9 @@ where
                 let (guard, shard) = unsafe { RwLockReadGuardDetached::detach_from(shard.read()) };
 
                 let guard = Arc::new(guard);
-                shard.iter().map(move |(k, v)| {
+                shard.iter().map(move |kv| {
                     let guard = Arc::clone(&guard);
-                    RefMulti::new(guard, k, v)
+                    RefMulti::new(tableref::multiple::RefMulti::new(guard, kv))
                 })
             })
             .drive_unindexed(consumer)
@@ -204,9 +204,9 @@ where
                     unsafe { RwLockWriteGuardDetached::detach_from(shard.write()) };
 
                 let guard = Arc::new(guard);
-                shard.iter_mut().map(move |(k, v)| {
+                shard.iter_mut().map(move |kv| {
                     let guard = Arc::clone(&guard);
-                    RefMutMulti::new(guard, k, v)
+                    RefMutMulti::new(tableref::multiple::RefMutMulti::new(guard, kv))
                 })
             })
             .drive_unindexed(consumer)
