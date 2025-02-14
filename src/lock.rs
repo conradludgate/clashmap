@@ -324,3 +324,68 @@ impl RawRwLock {
         }
     }
 }
+
+#[cfg(test)]
+#[cfg(not(miri))]
+mod tests {
+    use std::{thread, time::Duration};
+
+    #[test]
+    fn force_wait_unfair() {
+        let lock = super::RwLock::new(1);
+
+        thread::scope(|s| {
+            s.spawn(|| {
+                let r = lock.read();
+                thread::sleep(Duration::from_millis(300));
+                assert_eq!(*r, 1);
+            });
+
+            s.spawn(|| {
+                thread::sleep(Duration::from_millis(100));
+                let mut r = lock.write();
+                assert_eq!(*r, 1);
+                *r = 2;
+            });
+
+            s.spawn(|| {
+                thread::sleep(Duration::from_millis(200));
+                let r = lock.read();
+                assert_eq!(*r, 1, "this lock is unfair to the writers");
+            });
+        });
+
+        let r = lock.read();
+        assert_eq!(*r, 2);
+    }
+
+    #[test]
+    fn force_reader_wait() {
+        let lock = super::RwLock::new(1);
+
+        thread::scope(|s| {
+            s.spawn(|| {
+                let r = lock.read();
+                thread::sleep(Duration::from_millis(150));
+                assert_eq!(*r, 1);
+            });
+
+            s.spawn(|| {
+                thread::sleep(Duration::from_millis(100));
+                let mut r = lock.write();
+                thread::sleep(Duration::from_millis(100));
+                assert_eq!(*r, 1);
+                *r = 2;
+            });
+
+            s.spawn(|| {
+                thread::sleep(Duration::from_millis(200));
+                let r = lock.read();
+                assert_eq!(*r, 2);
+            });
+        });
+
+        let r = lock.read();
+        assert_eq!(*r, 2);
+    }
+}

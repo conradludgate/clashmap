@@ -1,6 +1,6 @@
 [package]
 name = "clashmap"
-version = "1.1.1"
+version = "1.1.2"
 authors = ["Conrad Ludgate <conradludgate@gmail.com>", "Joel Wejdenstål <jwejdenstal@icloud.com>"]
 edition = "2021"
 rust-version = "1.70"

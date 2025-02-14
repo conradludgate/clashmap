@@ -17,7 +17,7 @@ impl<'a, T> Ref<'a, T> {
         self.t
     }
 
-    pub fn map<F, U>(self, f: F) -> MappedRef<'a, U>
+    pub fn map<F, U: ?Sized>(self, f: F) -> MappedRef<'a, U>
     where
         F: FnOnce(&T) -> &U,
     {
@@ -27,7 +27,7 @@ impl<'a, T> Ref<'a, T> {
         }
     }
 
-    pub fn try_map<F, U>(self, f: F) -> Result<MappedRef<'a, U>, Self>
+    pub fn try_map<F, U: ?Sized>(self, f: F) -> Result<MappedRef<'a, U>, Self>
     where
         F: FnOnce(&T) -> Option<&U>,
     {
@@ -82,7 +82,7 @@ impl<'a, T> RefMut<'a, T> {
         )
     }
 
-    pub fn map<F, U>(self, f: F) -> MappedRefMut<'a, U>
+    pub fn map<F, U: ?Sized>(self, f: F) -> MappedRefMut<'a, U>
     where
         F: FnOnce(&mut T) -> &mut U,
     {
@@ -92,7 +92,7 @@ impl<'a, T> RefMut<'a, T> {
         }
     }
 
-    pub fn try_map<F, U: 'a>(self, f: F) -> Result<MappedRefMut<'a, U>, Self>
+    pub fn try_map<F, U: 'a + ?Sized>(self, f: F) -> Result<MappedRefMut<'a, U>, Self>
     where
         F: FnOnce(&mut T) -> Option<&mut U>,
     {
@@ -124,17 +124,17 @@ impl<T> DerefMut for RefMut<'_, T> {
     }
 }
 
-pub struct MappedRef<'a, T> {
+pub struct MappedRef<'a, T: ?Sized> {
     _guard: RwLockReadGuardDetached<'a>,
     t: &'a T,
 }
 
-impl<'a, T> MappedRef<'a, T> {
+impl<'a, T: ?Sized> MappedRef<'a, T> {
     pub fn value(&self) -> &T {
         self.t
     }
 
-    pub fn map<F, T2>(self, f: F) -> MappedRef<'a, T2>
+    pub fn map<F, T2: ?Sized>(self, f: F) -> MappedRef<'a, T2>
     where
         F: FnOnce(&T) -> &T2,
     {
@@ -144,7 +144,7 @@ impl<'a, T> MappedRef<'a, T> {
         }
     }
 
-    pub fn try_map<F, T2>(self, f: F) -> Result<MappedRef<'a, T2>, Self>
+    pub fn try_map<F, T2: ?Sized>(self, f: F) -> Result<MappedRef<'a, T2>, Self>
     where
         F: FnOnce(&T) -> Option<&T2>,
     {
@@ -160,13 +160,13 @@ impl<'a, T> MappedRef<'a, T> {
     }
 }
 
-impl<T: Debug> Debug for MappedRef<'_, T> {
+impl<T: Debug + ?Sized> Debug for MappedRef<'_, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.t.fmt(f)
     }
 }
 
-impl<T> Deref for MappedRef<'_, T> {
+impl<T: ?Sized> Deref for MappedRef<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -186,12 +186,12 @@ impl<T: AsRef<TDeref>, TDeref: ?Sized> AsRef<TDeref> for MappedRef<'_, T> {
     }
 }
 
-pub struct MappedRefMut<'a, T> {
+pub struct MappedRefMut<'a, T: ?Sized> {
     _guard: RwLockWriteGuardDetached<'a>,
     t: &'a mut T,
 }
 
-impl<'a, T> MappedRefMut<'a, T> {
+impl<'a, T: ?Sized> MappedRefMut<'a, T> {
     pub fn value(&self) -> &T {
         self.t
     }
@@ -210,7 +210,7 @@ impl<'a, T> MappedRefMut<'a, T> {
         }
     }
 
-    pub fn try_map<F, T2>(self, f: F) -> Result<MappedRefMut<'a, T2>, Self>
+    pub fn try_map<F, T2: ?Sized>(self, f: F) -> Result<MappedRefMut<'a, T2>, Self>
     where
         F: FnOnce(&mut T) -> Option<&mut T2>,
     {
@@ -222,13 +222,13 @@ impl<'a, T> MappedRefMut<'a, T> {
     }
 }
 
-impl<T: Debug> Debug for MappedRefMut<'_, T> {
+impl<T: Debug + ?Sized> Debug for MappedRefMut<'_, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.t.fmt(f)
     }
 }
 
-impl<T> Deref for MappedRefMut<'_, T> {
+impl<T: ?Sized> Deref for MappedRefMut<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -236,8 +236,63 @@ impl<T> Deref for MappedRefMut<'_, T> {
     }
 }
 
-impl<T> DerefMut for MappedRefMut<'_, T> {
+impl<T: ?Sized> DerefMut for MappedRefMut<'_, T> {
     fn deref_mut(&mut self) -> &mut T {
         self.value_mut()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::hash::{BuildHasher, Hash, Hasher, RandomState};
+
+    use crate::ClashTable;
+
+    fn hash_one(s: &impl BuildHasher, h: impl Hash) -> u64 {
+        let mut s = s.build_hasher();
+        h.hash(&mut s);
+        s.finish()
+    }
+
+    #[test]
+    fn downgrade() {
+        let data = ClashTable::new();
+        let hasher = RandomState::new();
+
+        data.entry(
+            hash_one(&hasher, "test"),
+            |&t| t == "test",
+            |t| hash_one(&hasher, t),
+        )
+        .or_insert("test");
+
+        let mut w_ref = data
+            .find_mut(hash_one(&hasher, "test"), |&t| t == "test")
+            .unwrap();
+
+        *w_ref.value_mut() = "test2";
+        let r_ref = w_ref.downgrade();
+        assert_eq!(*r_ref.value(), "test2");
+    }
+
+    #[test]
+    fn mapped_mut() {
+        let data = ClashTable::new();
+        let hasher = RandomState::new();
+
+        data.entry(
+            hash_one(&hasher, *b"test"),
+            |&t| t == *b"test",
+            |t| hash_one(&hasher, t),
+        )
+        .or_insert(*b"test");
+
+        let b_ref = data
+            .find_mut(hash_one(&hasher, *b"test"), |&t| t == *b"test")
+            .unwrap();
+
+        let s_ref = b_ref.try_map(|b| std::str::from_utf8_mut(b).ok()).unwrap();
+        let mut t_ref = s_ref.try_map(|s| s.get_mut(1..)).unwrap();
+        t_ref.value_mut().make_ascii_uppercase();
     }
 }
