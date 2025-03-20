@@ -268,7 +268,8 @@ impl<T: ?Sized> DerefMut for MappedRefMut<'_, T> {
 
 #[cfg(test)]
 mod tests {
-    use std::hash::{BuildHasher, Hash, Hasher, RandomState};
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hash, Hasher};
 
     use crate::ClashTable;
 
