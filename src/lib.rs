@@ -13,15 +13,11 @@ pub mod setref;
 pub mod tableref;
 pub mod try_result;
 
-#[cfg(feature = "raw-api")]
-pub mod sharded;
-#[cfg(not(feature = "raw-api"))]
-mod sharded;
-
 mod lock;
 mod map;
 mod read_only;
 mod set;
+mod sharded;
 mod table;
 mod util;
 
@@ -50,6 +46,8 @@ pub use mapref::entry::{Entry, OccupiedEntry, VacantEntry};
 pub use mapref::entry_ref::{EntryRef, VacantEntryRef};
 pub use read_only::ReadOnlyView;
 pub use set::ClashSet;
+#[cfg(feature = "raw-api")]
+pub use sharded::ClashCollection;
 pub use table::ClashTable;
 
 pub(crate) type HashMap<K, V> = hash_table::HashTable<(K, V)>;

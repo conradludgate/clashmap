@@ -8,6 +8,9 @@ pub struct Ref<'a, T: ?Sized> {
     pub(crate) t: &'a T,
 }
 
+/// Kept for backwards compatiblity.
+pub type MappedRef<'a, T> = Ref<'a, T>;
+
 impl<'a, T: ?Sized> Ref<'a, T> {
     pub(crate) fn new(guard: RwLockReadGuardDetached<'a>, t: &'a T) -> Self {
         Self { _guard: guard, t }
@@ -40,18 +43,6 @@ impl<'a, T: ?Sized> Ref<'a, T> {
             Err(self)
         }
     }
-
-    // TODO: remove `MappedRef`?.
-    pub(crate) fn try_map_inner<F, U: ?Sized>(self, f: F) -> Result<Ref<'a, U>, Self>
-    where
-        F: FnOnce(&T) -> Option<&U>,
-    {
-        let Self { _guard, t } = self;
-        match f(t) {
-            Some(t) => Ok(Ref { _guard, t }),
-            None => Err(Self { _guard, t }),
-        }
-    }
 }
 
 impl<T: Debug> Debug for Ref<'_, T> {
@@ -68,12 +59,27 @@ impl<T> Deref for Ref<'_, T> {
     }
 }
 
+impl<T: std::fmt::Display + ?Sized> std::fmt::Display for Ref<'_, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self.value(), f)
+    }
+}
+
+impl<T: AsRef<TDeref> + ?Sized, TDeref: ?Sized> AsRef<TDeref> for Ref<'_, T> {
+    fn as_ref(&self) -> &TDeref {
+        self.value().as_ref()
+    }
+}
+
 pub struct RefMut<'a, T: ?Sized> {
     pub(crate) guard: RwLockWriteGuardDetached<'a>,
     pub(crate) t: &'a mut T,
 }
 
-impl<'a, T> RefMut<'a, T> {
+/// Kept for backwards compatiblity.
+pub type MappedRefMut<'a, T> = RefMut<'a, T>;
+
+impl<'a, T: ?Sized> RefMut<'a, T> {
     pub(crate) fn new(guard: RwLockWriteGuardDetached<'a>, t: &'a mut T) -> Self {
         Self { guard, t }
     }
@@ -99,7 +105,7 @@ impl<'a, T> RefMut<'a, T> {
         F: FnOnce(&mut T) -> &mut U,
     {
         MappedRefMut {
-            _guard: self.guard,
+            guard: self.guard,
             t: f(self.t),
         }
     }
@@ -110,31 +116,19 @@ impl<'a, T> RefMut<'a, T> {
     {
         let Self { guard, t } = self;
         match try_map(t, f) {
-            Ok(t) => Ok(MappedRefMut { _guard: guard, t }),
-            Err(t) => Err(Self { guard, t }),
-        }
-    }
-
-    // TODO: remove `MappedRefMut`?.
-    pub(crate) fn try_map_inner<F, U: ?Sized>(self, f: F) -> Result<RefMut<'a, U>, Self>
-    where
-        F: FnOnce(&mut T) -> Option<&mut U>,
-    {
-        let Self { guard, t } = self;
-        match try_map(t, f) {
-            Ok(t) => Ok(RefMut { guard, t }),
+            Ok(t) => Ok(MappedRefMut { guard, t }),
             Err(t) => Err(Self { guard, t }),
         }
     }
 }
 
-impl<T: Debug> Debug for RefMut<'_, T> {
+impl<T: Debug + ?Sized> Debug for RefMut<'_, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.t.fmt(f)
     }
 }
 
-impl<T> Deref for RefMut<'_, T> {
+impl<T: ?Sized> Deref for RefMut<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -142,125 +136,7 @@ impl<T> Deref for RefMut<'_, T> {
     }
 }
 
-impl<T> DerefMut for RefMut<'_, T> {
-    fn deref_mut(&mut self) -> &mut T {
-        self.value_mut()
-    }
-}
-
-pub struct MappedRef<'a, T: ?Sized> {
-    _guard: RwLockReadGuardDetached<'a>,
-    t: &'a T,
-}
-
-impl<'a, T: ?Sized> MappedRef<'a, T> {
-    pub fn value(&self) -> &T {
-        self.t
-    }
-
-    pub fn map<F, T2: ?Sized>(self, f: F) -> MappedRef<'a, T2>
-    where
-        F: FnOnce(&T) -> &T2,
-    {
-        MappedRef {
-            _guard: self._guard,
-            t: f(self.t),
-        }
-    }
-
-    pub fn try_map<F, T2: ?Sized>(self, f: F) -> Result<MappedRef<'a, T2>, Self>
-    where
-        F: FnOnce(&T) -> Option<&T2>,
-    {
-        let v = match f(self.t) {
-            Some(v) => v,
-            None => return Err(self),
-        };
-        let guard = self._guard;
-        Ok(MappedRef {
-            _guard: guard,
-            t: v,
-        })
-    }
-}
-
-impl<T: Debug + ?Sized> Debug for MappedRef<'_, T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.t.fmt(f)
-    }
-}
-
-impl<T: ?Sized> Deref for MappedRef<'_, T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        self.value()
-    }
-}
-
-impl<T: std::fmt::Display> std::fmt::Display for MappedRef<'_, T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(self.value(), f)
-    }
-}
-
-impl<T: AsRef<TDeref>, TDeref: ?Sized> AsRef<TDeref> for MappedRef<'_, T> {
-    fn as_ref(&self) -> &TDeref {
-        self.value().as_ref()
-    }
-}
-
-pub struct MappedRefMut<'a, T: ?Sized> {
-    _guard: RwLockWriteGuardDetached<'a>,
-    t: &'a mut T,
-}
-
-impl<'a, T: ?Sized> MappedRefMut<'a, T> {
-    pub fn value(&self) -> &T {
-        self.t
-    }
-
-    pub fn value_mut(&mut self) -> &mut T {
-        self.t
-    }
-
-    pub fn map<F, T2>(self, f: F) -> MappedRefMut<'a, T2>
-    where
-        F: FnOnce(&mut T) -> &mut T2,
-    {
-        MappedRefMut {
-            _guard: self._guard,
-            t: f(self.t),
-        }
-    }
-
-    pub fn try_map<F, T2: ?Sized>(self, f: F) -> Result<MappedRefMut<'a, T2>, Self>
-    where
-        F: FnOnce(&mut T) -> Option<&mut T2>,
-    {
-        let Self { _guard, t } = self;
-        match try_map(t, f) {
-            Ok(t) => Ok(MappedRefMut { _guard, t }),
-            Err(t) => Err(Self { _guard, t }),
-        }
-    }
-}
-
-impl<T: Debug + ?Sized> Debug for MappedRefMut<'_, T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.t.fmt(f)
-    }
-}
-
-impl<T: ?Sized> Deref for MappedRefMut<'_, T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        self.value()
-    }
-}
-
-impl<T: ?Sized> DerefMut for MappedRefMut<'_, T> {
+impl<T: ?Sized> DerefMut for RefMut<'_, T> {
     fn deref_mut(&mut self) -> &mut T {
         self.value_mut()
     }

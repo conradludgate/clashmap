@@ -166,7 +166,7 @@ impl<T> ClashTable<T> {
     pub fn find(&self, hash: u64, eq: impl FnMut(&T) -> bool) -> Option<Ref<'_, T>> {
         self.tables
             .get_read_shard(hash)
-            .try_map_inner(|shard| shard.find(hash, eq))
+            .try_map(|shard| shard.find(hash, eq))
             .ok()
     }
 
@@ -176,7 +176,7 @@ impl<T> ClashTable<T> {
     pub fn find_mut(&self, hash: u64, eq: impl FnMut(&T) -> bool) -> Option<RefMut<'_, T>> {
         self.tables
             .get_write_shard(hash)
-            .try_map_inner(|shard| find_mut(shard, hash, eq))
+            .try_map(|shard| find_mut(shard, hash, eq))
             .ok()
     }
 
@@ -188,7 +188,7 @@ impl<T> ClashTable<T> {
         };
 
         shard
-            .try_map_inner(|shard| shard.find(hash, eq))
+            .try_map(|shard| shard.find(hash, eq))
             .map_or(TryResult::Absent, TryResult::Present)
     }
 
@@ -200,7 +200,7 @@ impl<T> ClashTable<T> {
         };
 
         shard
-            .try_map_inner(|shard| find_mut(shard, hash, eq))
+            .try_map(|shard| find_mut(shard, hash, eq))
             .map_or(TryResult::Absent, TryResult::Present)
     }
 

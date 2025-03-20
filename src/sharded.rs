@@ -2,8 +2,12 @@ use crate::default_shard_amount;
 use crate::lock::{RwLock, RwLockReadGuardDetached, RwLockWriteGuardDetached};
 use crate::tableref::one::{Ref, RefMut};
 use crossbeam_utils::CachePadded;
-// use std::convert::Infallible;
 
+/// An implementation detail of [`ClashTable`](crate::ClashTable), exposed for convenience.
+///
+/// This implements the core sharded data structure that allows for efficient concurrency in ClashMap.
+///
+/// Requires the `raw-api` feature to be enabled.
 pub struct ClashCollection<T> {
     pub(crate) shift: usize,
     pub(crate) shards: Box<[CachePadded<RwLock<T>>]>,
@@ -35,49 +39,33 @@ impl<T: Default> Default for ClashCollection<T> {
 #[allow(dead_code)]
 impl<T> ClashCollection<T> {
     /// Allows you to peek at the inner shards that store your data.
-    /// You should probably not use this unless you know what you are doing.
-    ///
-    /// Requires the `raw-api` feature to be enabled.
     pub fn shards(&self) -> &[CachePadded<RwLock<T>>] {
         &self.shards
     }
 
     /// Provides mutable access to the inner shards that store your data.
-    /// You should probably not use this unless you know what you are doing.
-    ///
-    /// Requires the `raw-api` feature to be enabled.
     pub fn shards_mut(&mut self) -> &mut [CachePadded<RwLock<T>>] {
         &mut self.shards
     }
 
     /// Consumes this `ClashCollection` and returns the inner shards.
-    /// You should probably not use this unless you know what you are doing.
-    ///
-    /// Requires the `raw-api` feature to be enabled.
     pub fn into_shards(self) -> Box<[CachePadded<RwLock<T>>]> {
         self.shards
     }
 
     /// Finds which shard a certain hash is stored in.
-    ///
-    /// Requires the `raw-api` feature to be enabled.
     pub fn determine_shard(&self, hash: usize) -> usize {
         self._determine_shard(hash)
     }
 }
 
 impl<T> ClashCollection<T> {
-    // /// Wraps this `ClashCollection` into a read-only view. This view allows to obtain raw references to the stored values.
-    // pub fn into_read_only(self) -> ReadOnlyView<T> {
-    //     ReadOnlyView::new(self)
-    // }
-
-    /// Creates a new ClashCollection with a capacity of 0.
+    /// Creates a new `ClashCollection`.
     pub fn new(init: impl FnMut() -> T) -> Self {
         ClashCollection::with_shard_amount(default_shard_amount(), init)
     }
 
-    /// Creates a new ClashCollection with a specified shard amount
+    /// Creates a new `ClashCollection` with a specified shard amount
     ///
     /// shard_amount should greater than 0 and be a power of two.
     /// If a shard_amount which is not a power of two is provided, the function will panic.
