@@ -94,7 +94,7 @@ impl<'a, K: Eq + Hash, V> EntryMut<'a, K, V> {
     /// If you are not interested in the occupied entry,
     /// consider [`insert`] as it doesn't need to clone the key.
     ///
-    /// [`insert`]: Entry::insert
+    /// [`insert`]: EntryMut::insert
     pub fn insert_entry(self, value: V) -> OccupiedEntryMut<'a, K, V>
     where
         K: Clone,

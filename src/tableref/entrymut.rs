@@ -77,7 +77,7 @@ impl<'a, T> EntryMut<'a, T> {
     /// If you are not interested in the occupied entry,
     /// consider [`insert`] as it doesn't need to clone the key.
     ///
-    /// [`insert`]: Entry::insert
+    /// [`insert`]: EntryMut::insert
     pub fn insert_entry(self, value: T) -> OccupiedEntryMut<'a, T> {
         match self {
             EntryMut::Occupied(mut entry) => {
