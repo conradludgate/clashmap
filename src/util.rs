@@ -17,6 +17,19 @@ where
     Err(t)
 }
 
+// pub(crate) fn try_map_either<F, T: ?Sized, U: ?Sized, V: ?Sized>(mut t: &mut T, f: F) -> Result<&mut U, &mut T>
+// where
+//     F: FnOnce(&mut T) -> Result<&mut U, &mut V>,
+// {
+//     use polonius_the_crab::{polonius, polonius_return};
+//     polonius!(|t| -> Result<&'polonius mut U, &mut T> {
+//         if let Some(u) = f(t) {
+//             polonius_return!(Ok(u));
+//         }
+//     });
+//     Err(t)
+// }
+
 pub(crate) fn try_map2<F, K, V: ?Sized, T: ?Sized>(
     mut t: &mut (K, V),
     f: F,

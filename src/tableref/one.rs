@@ -3,12 +3,12 @@ use crate::util::try_map;
 use core::ops::{Deref, DerefMut};
 use std::fmt::{Debug, Formatter};
 
-pub struct Ref<'a, T> {
+pub struct Ref<'a, T: ?Sized> {
     pub(crate) _guard: RwLockReadGuardDetached<'a>,
     pub(crate) t: &'a T,
 }
 
-impl<'a, T> Ref<'a, T> {
+impl<'a, T: ?Sized> Ref<'a, T> {
     pub(crate) fn new(guard: RwLockReadGuardDetached<'a>, t: &'a T) -> Self {
         Self { _guard: guard, t }
     }
@@ -40,6 +40,18 @@ impl<'a, T> Ref<'a, T> {
             Err(self)
         }
     }
+
+    // TODO: remove `MappedRef`?.
+    pub(crate) fn try_map_inner<F, U: ?Sized>(self, f: F) -> Result<Ref<'a, U>, Self>
+    where
+        F: FnOnce(&T) -> Option<&U>,
+    {
+        let Self { _guard, t } = self;
+        match f(t) {
+            Some(t) => Ok(Ref { _guard, t }),
+            None => Err(Self { _guard, t }),
+        }
+    }
 }
 
 impl<T: Debug> Debug for Ref<'_, T> {
@@ -56,7 +68,7 @@ impl<T> Deref for Ref<'_, T> {
     }
 }
 
-pub struct RefMut<'a, T> {
+pub struct RefMut<'a, T: ?Sized> {
     pub(crate) guard: RwLockWriteGuardDetached<'a>,
     pub(crate) t: &'a mut T,
 }
@@ -99,6 +111,18 @@ impl<'a, T> RefMut<'a, T> {
         let Self { guard, t } = self;
         match try_map(t, f) {
             Ok(t) => Ok(MappedRefMut { _guard: guard, t }),
+            Err(t) => Err(Self { guard, t }),
+        }
+    }
+
+    // TODO: remove `MappedRefMut`?.
+    pub(crate) fn try_map_inner<F, U: ?Sized>(self, f: F) -> Result<RefMut<'a, U>, Self>
+    where
+        F: FnOnce(&mut T) -> Option<&mut U>,
+    {
+        let Self { guard, t } = self;
+        match try_map(t, f) {
+            Ok(t) => Ok(RefMut { guard, t }),
             Err(t) => Err(Self { guard, t }),
         }
     }

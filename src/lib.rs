@@ -13,6 +13,11 @@ pub mod setref;
 pub mod tableref;
 pub mod try_result;
 
+#[cfg(feature = "raw-api")]
+pub mod sharded;
+#[cfg(not(feature = "raw-api"))]
+mod sharded;
+
 mod lock;
 mod map;
 mod read_only;

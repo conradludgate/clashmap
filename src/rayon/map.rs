@@ -75,7 +75,7 @@ where
 
     fn into_par_iter(self) -> Self::Iter {
         OwningIter {
-            shards: self.table.shards,
+            shards: self.table.tables.shards,
         }
     }
 }
@@ -114,7 +114,7 @@ where
 
     fn into_par_iter(self) -> Self::Iter {
         Iter {
-            shards: &self.table.shards,
+            shards: &self.table.tables.shards,
         }
     }
 }
@@ -162,7 +162,7 @@ where
 
     fn into_par_iter(self) -> Self::Iter {
         IterMut {
-            shards: &self.table.shards,
+            shards: &self.table.tables.shards,
         }
     }
 }
@@ -175,7 +175,7 @@ where
     // Unlike `IntoParallelRefMutIterator::par_iter_mut`, we only _need_ `&self`.
     pub fn par_iter_mut(&self) -> IterMut<'_, K, V> {
         IterMut {
-            shards: &self.table.shards,
+            shards: &self.table.tables.shards,
         }
     }
 }

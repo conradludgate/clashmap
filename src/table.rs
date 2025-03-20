@@ -1,4 +1,4 @@
-use crate::lock::{RwLock, RwLockReadGuardDetached, RwLockWriteGuardDetached};
+use crate::sharded::ClashCollection;
 use crate::tableref::entry::{AbsentEntry, Entry, OccupiedEntry, VacantEntry};
 use crate::tableref::entrymut::{EntryMut, OccupiedEntryMut, VacantEntryMut};
 use crate::tableref::iter::{Iter, IterMut, OwningIter};
@@ -7,9 +7,11 @@ use crate::tableref::one::{Ref, RefMut};
 use crate::try_result::TryResult;
 use crate::{default_shard_amount, TryReserveError};
 use core::fmt;
-use crossbeam_utils::CachePadded;
 use hashbrown::{hash_table, HashTable};
 use std::convert::Infallible;
+
+#[cfg(any(feature = "raw-api", feature = "typesize"))]
+use {crate::lock::RwLock, crossbeam_utils::CachePadded};
 
 /// ClashTable is an implementation of a concurrent hashtable in Rust.
 ///
@@ -19,23 +21,13 @@ use std::convert::Infallible;
 /// Documentation mentioning locking behaviour acts in the reference frame of the calling thread.
 /// This means that it is safe to ignore it across multiple threads.
 pub struct ClashTable<T> {
-    pub(crate) shift: usize,
-    pub(crate) shards: Box<[CachePadded<RwLock<HashTable<T>>>]>,
+    pub(crate) tables: ClashCollection<HashTable<T>>,
 }
 
 impl<T: Clone> Clone for ClashTable<T> {
     fn clone(&self) -> Self {
-        let mut inner_shards = Vec::new();
-
-        for shard in self.shards.iter() {
-            let shard = shard.read();
-
-            inner_shards.push(CachePadded::new(RwLock::new((*shard).clone())));
-        }
-
         Self {
-            shift: self.shift,
-            shards: inner_shards.into_boxed_slice(),
+            tables: self.tables.clone(),
         }
     }
 }
@@ -53,7 +45,7 @@ impl<T> ClashTable<T> {
     ///
     /// Requires the `raw-api` feature to be enabled.
     pub fn shards(&self) -> &[CachePadded<RwLock<HashTable<T>>>] {
-        &self.shards
+        self.tables.shards()
     }
 
     /// Provides mutable access to the inner shards that store your data.
@@ -61,7 +53,7 @@ impl<T> ClashTable<T> {
     ///
     /// Requires the `raw-api` feature to be enabled.
     pub fn shards_mut(&mut self) -> &mut [CachePadded<RwLock<HashTable<T>>>] {
-        &mut self.shards
+        self.tables.shards_mut()
     }
 
     /// Consumes this `ClashTable` and returns the inner shards.
@@ -69,14 +61,21 @@ impl<T> ClashTable<T> {
     ///
     /// Requires the `raw-api` feature to be enabled.
     pub fn into_shards(self) -> Box<[CachePadded<RwLock<HashTable<T>>>]> {
-        self.shards
+        self.tables.into_shards()
     }
 
     /// Finds which shard a certain hash is stored in.
     ///
     /// Requires the `raw-api` feature to be enabled.
     pub fn determine_shard(&self, hash: usize) -> usize {
-        self._determine_shard(hash)
+        self.tables.determine_shard(hash)
+    }
+}
+
+fn find_mut<T>(shard: &mut HashTable<T>, hash: u64, eq: impl FnMut(&T) -> bool) -> Option<&mut T> {
+    match shard.find_entry(hash, eq) {
+        Ok(entry) => Some(entry.into_mut()),
+        Err(_) => None,
     }
 }
 
@@ -109,44 +108,17 @@ impl<T> ClashTable<T> {
     /// shard_amount should greater than 0 and be a power of two.
     /// If a shard_amount which is not a power of two is provided, the function will panic.
     pub fn with_capacity_and_shard_amount(mut capacity: usize, shard_amount: usize) -> Self {
-        assert!(shard_amount > 1);
-        assert!(shard_amount.is_power_of_two());
-
-        let shift = (usize::BITS - shard_amount.trailing_zeros()) as usize;
-
         if capacity != 0 {
             capacity = (capacity + (shard_amount - 1)) & !(shard_amount - 1);
         }
 
         let cps = capacity / shard_amount;
 
-        let shards = (0..shard_amount)
-            .map(|_| CachePadded::new(RwLock::new(HashTable::with_capacity(cps))))
-            .collect();
-
-        Self { shift, shards }
-    }
-
-    #[inline(always)]
-    pub(crate) fn _determine_shard(&self, hash: usize) -> usize {
-        // Leave the high 7 bits for the HashBrown SIMD tag.
-        let idx = (hash << 7) >> self.shift;
-
-        // hint to llvm that the panic bounds check can be removed
-        if idx >= self.shards.len() {
-            if cfg!(debug_assertions) {
-                unreachable!("invalid shard index")
-            } else {
-                // SAFETY: shards is always a power of two,
-                // and shift is calculated such that the resulting idx is always
-                // less than the shards length
-                unsafe {
-                    std::hint::unreachable_unchecked();
-                }
-            }
+        Self {
+            tables: ClashCollection::with_shard_amount(shard_amount, || {
+                HashTable::with_capacity(cps)
+            }),
         }
-
-        idx
     }
 
     /// Creates an iterator over a ClashTable yielding immutable references.
@@ -174,14 +146,11 @@ impl<T> ClashTable<T> {
 
     pub(crate) fn try_fold<R, E>(
         &self,
-        mut r: R,
+        r: R,
         mut f: impl FnMut(R, &T) -> Result<R, E>,
     ) -> Result<R, E> {
-        for shard in self.shards.iter() {
-            let shard = shard.read();
-            r = shard.iter().try_fold(r, &mut f)?;
-        }
-        Ok(r)
+        self.tables
+            .try_fold(r, |r, shard| shard.iter().try_fold(r, &mut f))
     }
 
     /// Iterator over a ClashTable yielding mutable references.
@@ -195,79 +164,51 @@ impl<T> ClashTable<T> {
     ///
     /// **Locking behaviour:** May deadlock if called when holding a mutable reference into the map.
     pub fn find(&self, hash: u64, eq: impl FnMut(&T) -> bool) -> Option<Ref<'_, T>> {
-        let idx = self._determine_shard(hash as usize);
-
-        let shard = self.shards[idx].read();
-
-        // SAFETY: The data will not outlive the guard, since we pass the guard to `Ref`.
-        let (guard, shard) = unsafe { RwLockReadGuardDetached::detach_from(shard) };
-
-        shard.find(hash, eq).map(|entry| Ref::new(guard, entry))
+        self.tables
+            .get_read_shard(hash)
+            .try_map_inner(|shard| shard.find(hash, eq))
+            .ok()
     }
 
     /// Get a mutable reference to an entry in the map
     ///
     /// **Locking behaviour:** May deadlock if called when holding any sort of reference into the map.
     pub fn find_mut(&self, hash: u64, eq: impl FnMut(&T) -> bool) -> Option<RefMut<'_, T>> {
-        let idx = self._determine_shard(hash as usize);
-
-        let shard = self.shards[idx].write();
-
-        // SAFETY: The data will not outlive the guard, since we pass the guard to `RefMut`.
-        let (guard, shard) = unsafe { RwLockWriteGuardDetached::detach_from(shard) };
-
-        if let Ok(entry) = shard.find_entry(hash, eq) {
-            Some(RefMut::new(guard, entry.into_mut()))
-        } else {
-            None
-        }
+        self.tables
+            .get_write_shard(hash)
+            .try_map_inner(|shard| find_mut(shard, hash, eq))
+            .ok()
     }
 
     /// Get an immutable reference to an entry in the map, if the shard is not locked.
     /// If the shard is locked, the function will return [TryResult::Locked].
     pub fn try_find(&self, hash: u64, eq: impl FnMut(&T) -> bool) -> TryResult<Ref<'_, T>> {
-        let idx = self._determine_shard(hash as usize);
-
-        let shard = match self.shards[idx].try_read() {
-            Some(shard) => shard,
-            None => return TryResult::Locked,
+        let Some(shard) = self.tables.try_read_shard(hash) else {
+            return TryResult::Locked;
         };
 
-        // SAFETY: The data will not outlive the guard, since we pass the guard to `Ref`.
-        let (guard, shard) = unsafe { RwLockReadGuardDetached::detach_from(shard) };
-
-        if let Some(entry) = shard.find(hash, eq) {
-            TryResult::Present(Ref::new(guard, entry))
-        } else {
-            TryResult::Absent
-        }
+        shard
+            .try_map_inner(|shard| shard.find(hash, eq))
+            .map_or(TryResult::Absent, TryResult::Present)
     }
 
     /// Get a mutable reference to an entry in the map, if the shard is not locked.
     /// If the shard is locked, the function will return [TryResult::Locked].
     pub fn try_find_mut(&self, hash: u64, eq: impl FnMut(&T) -> bool) -> TryResult<RefMut<'_, T>> {
-        let idx = self._determine_shard(hash as usize);
-
-        let shard = match self.shards[idx].try_write() {
-            Some(shard) => shard,
-            None => return TryResult::Locked,
+        let Some(shard) = self.tables.try_write_shard(hash) else {
+            return TryResult::Locked;
         };
 
-        // SAFETY: The data will not outlive the guard, since we pass the guard to `RefMut`.
-        let (guard, shard) = unsafe { RwLockWriteGuardDetached::detach_from(shard) };
-
-        if let Ok(entry) = shard.find_entry(hash, eq) {
-            TryResult::Present(RefMut::new(guard, entry.into_mut()))
-        } else {
-            TryResult::Absent
-        }
+        shard
+            .try_map_inner(|shard| find_mut(shard, hash, eq))
+            .map_or(TryResult::Absent, TryResult::Present)
     }
 
     /// Remove excess capacity to reduce memory usage.
     ///
     /// **Locking behaviour:** May deadlock if called when holding any sort of reference into the map.
     pub fn shrink_to_fit(&self, hasher: impl Fn(&T) -> u64) {
-        self.shards.iter().for_each(|s| {
+        self.tables.shards().iter().for_each(|s| {
             s.write().shrink_to_fit(|t| hasher(t));
         })
     }
@@ -277,7 +218,7 @@ impl<T> ClashTable<T> {
     ///
     /// **Locking behaviour:** May deadlock if called when holding any sort of reference into the map.
     pub fn retain(&self, mut f: impl FnMut(&mut T) -> bool) {
-        self.shards.iter().for_each(|s| {
+        self.tables.shards().iter().for_each(|s| {
             s.write().retain(|t| f(t));
         })
     }
@@ -286,7 +227,7 @@ impl<T> ClashTable<T> {
     ///
     /// **Locking behaviour:** May deadlock if called when holding a mutable reference into the map.
     pub fn len(&self) -> usize {
-        self.shards.iter().map(|s| s.read().len()).sum()
+        self.tables.shards().iter().map(|s| s.read().len()).sum()
     }
 
     /// Checks if the map is empty or not.
@@ -307,7 +248,11 @@ impl<T> ClashTable<T> {
     ///
     /// **Locking behaviour:** May deadlock if called when holding a mutable reference into the map.
     pub fn capacity(&self) -> usize {
-        self.shards.iter().map(|s| s.read().capacity()).sum()
+        self.tables
+            .shards()
+            .iter()
+            .map(|s| s.read().capacity())
+            .sum()
     }
 
     /// Advanced entry API that tries to mimic `std::collections::HashMap`.
@@ -317,9 +262,7 @@ impl<T> ClashTable<T> {
         eq: impl FnMut(&T) -> bool,
         hasher: impl Fn(&T) -> u64,
     ) -> EntryMut<'_, T> {
-        let idx = self._determine_shard(hash as usize);
-
-        let shard = self.shards[idx].get_mut();
+        let shard = self.tables.get_mut(hash);
         match shard.entry(hash, eq, hasher) {
             hash_table::Entry::Occupied(occupied_entry) => {
                 EntryMut::Occupied(OccupiedEntryMut::new(occupied_entry))
@@ -339,14 +282,8 @@ impl<T> ClashTable<T> {
         hash: u64,
         eq: impl FnMut(&T) -> bool,
     ) -> Result<OccupiedEntry<'_, T>, AbsentEntry<'_, T>> {
-        let idx = self._determine_shard(hash as usize);
-
-        let shard = self.shards[idx].write();
-
-        // SAFETY: The data will not outlive the guard, since we pass the guard to `Entry`.
-        let (guard, shard) = unsafe { RwLockWriteGuardDetached::detach_from(shard) };
-
-        match shard.find_entry(hash, eq) {
+        let RefMut { guard, t } = self.tables.get_write_shard(hash);
+        match t.find_entry(hash, eq) {
             Ok(occupied_entry) => Ok(OccupiedEntry::new(guard, occupied_entry)),
             Err(absent_entry) => Err(AbsentEntry::new(guard, absent_entry)),
         }
@@ -362,14 +299,8 @@ impl<T> ClashTable<T> {
         eq: impl FnMut(&T) -> bool,
         hasher: impl Fn(&T) -> u64,
     ) -> Entry<'_, T> {
-        let idx = self._determine_shard(hash as usize);
-
-        let shard = self.shards[idx].write();
-
-        // SAFETY: The data will not outlive the guard, since we pass the guard to `Entry`.
-        let (guard, shard) = unsafe { RwLockWriteGuardDetached::detach_from(shard) };
-
-        match shard.entry(hash, eq, hasher) {
+        let RefMut { guard, t } = self.tables.get_write_shard(hash);
+        match t.entry(hash, eq, hasher) {
             hash_table::Entry::Occupied(occupied_entry) => {
                 Entry::Occupied(OccupiedEntry::new(guard, occupied_entry))
             }
@@ -389,14 +320,8 @@ impl<T> ClashTable<T> {
         eq: impl FnMut(&T) -> bool,
         hasher: impl Fn(&T) -> u64,
     ) -> Option<Entry<'_, T>> {
-        let idx = self._determine_shard(hash as usize);
-
-        let shard = self.shards[idx].try_write()?;
-
-        // SAFETY: The data will not outlive the guard, since we pass the guard to `Entry`.
-        let (guard, shard) = unsafe { RwLockWriteGuardDetached::detach_from(shard) };
-
-        match shard.entry(hash, eq, hasher) {
+        let RefMut { guard, t } = self.tables.try_write_shard(hash)?;
+        match t.entry(hash, eq, hasher) {
             hash_table::Entry::Occupied(occupied_entry) => {
                 Some(Entry::Occupied(OccupiedEntry::new(guard, occupied_entry)))
             }
@@ -419,7 +344,7 @@ impl<T> ClashTable<T> {
         additional: usize,
         hasher: impl Fn(&T) -> u64,
     ) -> Result<(), TryReserveError> {
-        for shard in self.shards.iter() {
+        for shard in self.tables.shards().iter() {
             shard
                 .write()
                 .try_reserve(additional, |t| hasher(t))
@@ -465,7 +390,8 @@ where
     T: typesize::TypeSize,
 {
     fn extra_size(&self) -> usize {
-        self.shards
+        self.tables
+            .shards()
             .iter()
             .map(|shard_lock| {
                 let shard = shard_lock.read();

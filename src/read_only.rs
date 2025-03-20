@@ -1,4 +1,5 @@
 use crate::lock::RwLock;
+use crate::sharded::ClashCollection;
 use crate::ClashMap;
 use crate::ClashTable;
 use crate::HashMap;
@@ -41,12 +42,13 @@ impl<K, V, S> ReadOnlyView<K, V, S> {
         Self {
             shards: map
                 .table
+                .tables
                 .shards
                 .into_vec()
                 .into_iter()
                 .map(|s| s.into_inner().into_inner())
                 .collect(),
-            shift: map.table.shift,
+            shift: map.table.tables.shift,
             hasher: map.hasher,
         }
     }
@@ -55,13 +57,15 @@ impl<K, V, S> ReadOnlyView<K, V, S> {
     pub fn into_inner(self) -> ClashMap<K, V, S> {
         ClashMap {
             table: ClashTable {
-                shards: self
-                    .shards
-                    .into_vec()
-                    .into_iter()
-                    .map(|s| CachePadded::new(RwLock::new(s)))
-                    .collect(),
-                shift: self.shift,
+                tables: ClashCollection {
+                    shards: self
+                        .shards
+                        .into_vec()
+                        .into_iter()
+                        .map(|s| CachePadded::new(RwLock::new(s)))
+                        .collect(),
+                    shift: self.shift,
+                },
             },
             hasher: self.hasher,
         }

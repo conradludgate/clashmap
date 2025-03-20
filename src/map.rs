@@ -794,13 +794,8 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
     where
         K: Eq + Hash,
     {
-        use hashbrown::hash_table;
-
         let hash = self.hash_u64(&key);
-        let idx = self.table._determine_shard(hash as usize);
-        let shard = self.table.shards[idx].get_mut();
-
-        match shard.entry(
+        match self.table.entry_mut(
             hash,
             |(k, _v)| k == &key,
             |(k, _v)| {
@@ -809,11 +804,11 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
                 hasher.finish()
             },
         ) {
-            hash_table::Entry::Occupied(occupied_entry) => {
-                EntryMut::Occupied(OccupiedEntryMut::new(key, occupied_entry))
+            crate::tableref::entrymut::EntryMut::Occupied(occupied_entry_mut) => {
+                EntryMut::Occupied(OccupiedEntryMut::new(key, occupied_entry_mut.entry))
             }
-            hash_table::Entry::Vacant(vacant_entry) => {
-                EntryMut::Vacant(VacantEntryMut::new(key, vacant_entry))
+            crate::tableref::entrymut::EntryMut::Vacant(vacant_entry_mut) => {
+                EntryMut::Vacant(VacantEntryMut::new(key, vacant_entry_mut.entry))
             }
         }
     }
