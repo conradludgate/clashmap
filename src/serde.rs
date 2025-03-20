@@ -181,14 +181,6 @@ impl<K: Eq + Hash, V: Serialize> Serialize for mapref::one::RefMut<'_, K, V> {
     serialize_impl! {}
 }
 
-impl<K: Eq + Hash, T: Serialize> Serialize for mapref::one::MappedRef<'_, K, T> {
-    serialize_impl! {}
-}
-
-impl<K: Eq + Hash, T: Serialize> Serialize for mapref::one::MappedRefMut<'_, K, T> {
-    serialize_impl! {}
-}
-
 // Set
 impl<V: Hash + Eq + Serialize> Serialize for setref::multiple::RefMulti<'_, V> {
     serialize_impl! {}

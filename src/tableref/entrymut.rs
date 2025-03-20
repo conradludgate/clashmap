@@ -77,7 +77,7 @@ impl<'a, T> EntryMut<'a, T> {
     /// If you are not interested in the occupied entry,
     /// consider [`insert`] as it doesn't need to clone the key.
     ///
-    /// [`insert`]: Entry::insert
+    /// [`insert`]: EntryMut::insert
     pub fn insert_entry(self, value: T) -> OccupiedEntryMut<'a, T> {
         match self {
             EntryMut::Occupied(mut entry) => {
@@ -90,7 +90,7 @@ impl<'a, T> EntryMut<'a, T> {
 }
 
 pub struct VacantEntryMut<'a, T> {
-    entry: hash_table::VacantEntry<'a, T>,
+    pub(crate) entry: hash_table::VacantEntry<'a, T>,
 }
 
 impl<'a, T> VacantEntryMut<'a, T> {
@@ -111,7 +111,7 @@ impl<'a, T> VacantEntryMut<'a, T> {
 }
 
 pub struct OccupiedEntryMut<'a, T> {
-    entry: hash_table::OccupiedEntry<'a, T>,
+    pub(crate) entry: hash_table::OccupiedEntry<'a, T>,
 }
 
 impl<'a, T> OccupiedEntryMut<'a, T> {

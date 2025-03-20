@@ -16,7 +16,7 @@ pub struct OwningIter<T> {
 impl<T> OwningIter<T> {
     pub(crate) fn new(map: ClashTable<T>) -> Self {
         Self {
-            shards: map.shards.into_vec().into_iter(),
+            shards: map.tables.shards.into_vec().into_iter(),
             current: None,
         }
     }
@@ -71,7 +71,7 @@ impl<T> Clone for Iter<'_, T> {
 impl<'a, T: 'a> Iter<'a, T> {
     pub(crate) fn new(map: &'a ClashTable<T>) -> Self {
         Self {
-            shards: map.shards.iter(),
+            shards: map.tables.shards.iter(),
             current: None,
         }
     }
@@ -108,7 +108,7 @@ pub struct IterMut<'a, T> {
 impl<'a, T: 'a> IterMut<'a, T> {
     pub(crate) fn new(map: &'a ClashTable<T>) -> Self {
         Self {
-            shards: map.shards.iter(),
+            shards: map.tables.shards.iter(),
             current: None,
         }
     }
@@ -165,7 +165,7 @@ mod tests {
 
         let mut c = 0;
 
-        for shard in map.shards.iter() {
+        for shard in map.tables.shards.iter() {
             c += shard.write().iter().count();
         }
 
