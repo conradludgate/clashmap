@@ -133,4 +133,19 @@ impl<'a, T> OccupiedEntryMut<'a, T> {
         let (v, e) = self.entry.remove();
         (v, VacantEntryMut::new(e))
     }
+
+    /// Provides owned access to the value of the entry and allows to replace
+    /// or remove it based on the value of the returned option.
+    ///
+    /// The hash of the new item must be the same as the old item, otherwise
+    /// future lookups for the new item may fail to find it.
+    pub fn replace_entry_with<F>(self, f: F) -> EntryMut<'a, T>
+    where
+        F: FnOnce(T) -> Option<T>,
+    {
+        match self.entry.replace_entry_with(f) {
+            hash_table::Entry::Occupied(o) => EntryMut::Occupied(OccupiedEntryMut::new(o)),
+            hash_table::Entry::Vacant(v) => EntryMut::Vacant(VacantEntryMut::new(v)),
+        }
+    }
 }

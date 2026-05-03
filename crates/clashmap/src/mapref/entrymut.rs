@@ -91,6 +91,19 @@ impl<'a, K: Eq + Hash, V> EntryMut<'a, K, V> {
             EntryMut::Vacant(entry) => entry.insert_entry(value),
         }
     }
+
+    /// If the entry is occupied, calls `f` with shared access to the key and
+    /// owned access to the value, replacing or removing the entry depending on
+    /// the returned `Option`. Vacant entries are returned unchanged.
+    pub fn and_replace_entry_with<F>(self, f: F) -> Self
+    where
+        F: FnOnce(&K, V) -> Option<V>,
+    {
+        match self {
+            EntryMut::Occupied(entry) => entry.replace_entry_with(f),
+            EntryMut::Vacant(_) => self,
+        }
+    }
 }
 
 pub struct VacantEntryMut<'a, K, V> {
@@ -160,6 +173,29 @@ impl<'a, K: Eq + Hash, V> OccupiedEntryMut<'a, K, V> {
     pub fn remove_entry(self) -> (K, V) {
         let ((k, v), _) = self.entry.remove();
         (k, v)
+    }
+
+    /// Provides shared access to the key and owned access to the value of the
+    /// entry, replacing or removing it based on the returned `Option`.
+    pub fn replace_entry_with<F>(self, f: F) -> EntryMut<'a, K, V>
+    where
+        F: FnOnce(&K, V) -> Option<V>,
+    {
+        let mut spare_key = None;
+        let underlying = self.entry.replace_entry_with(|(k, v)| match f(&k, v) {
+            Some(new_v) => Some((k, new_v)),
+            None => {
+                spare_key = Some(k);
+                None
+            }
+        });
+        match underlying {
+            hash_table::Entry::Occupied(o) => EntryMut::Occupied(OccupiedEntryMut::new(o)),
+            hash_table::Entry::Vacant(v) => {
+                let key = spare_key.expect("None branch must capture key");
+                EntryMut::Vacant(VacantEntryMut::new(key, v))
+            }
+        }
     }
 }
 
