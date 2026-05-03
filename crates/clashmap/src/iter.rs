@@ -25,7 +25,7 @@ pub struct OwningIter<K, V> {
 impl<K, V> OwningIter<K, V> {
     pub(crate) fn new<S: BuildHasher>(map: ClashMap<K, V, S>) -> Self {
         Self {
-            shards: map.table.tables.shards.into_vec().into_iter(),
+            shards: map.table.tables.into_shards().into_vec().into_iter(),
             current: None,
         }
     }

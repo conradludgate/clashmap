@@ -282,7 +282,9 @@ impl<T> ClashTable<T> {
         hash: u64,
         eq: impl FnMut(&T) -> bool,
     ) -> Result<OccupiedEntry<'_, T>, AbsentEntry<'_, T>> {
-        let RefMut { guard, t } = self.tables.get_write_shard(hash);
+        // SAFETY: the guard is re-bundled with the derived entry in
+        // `OccupiedEntry`/`AbsentEntry`, which drops them together.
+        let (guard, t) = unsafe { self.tables.get_write_shard(hash).into_parts() };
         match t.find_entry(hash, eq) {
             Ok(occupied_entry) => Ok(OccupiedEntry::new(guard, occupied_entry)),
             Err(absent_entry) => Err(AbsentEntry::new(guard, absent_entry)),
@@ -299,7 +301,9 @@ impl<T> ClashTable<T> {
         eq: impl FnMut(&T) -> bool,
         hasher: impl Fn(&T) -> u64,
     ) -> Entry<'_, T> {
-        let RefMut { guard, t } = self.tables.get_write_shard(hash);
+        // SAFETY: the guard is re-bundled with the derived entry in
+        // `OccupiedEntry`/`VacantEntry`, which drops them together.
+        let (guard, t) = unsafe { self.tables.get_write_shard(hash).into_parts() };
         match t.entry(hash, eq, hasher) {
             hash_table::Entry::Occupied(occupied_entry) => {
                 Entry::Occupied(OccupiedEntry::new(guard, occupied_entry))
@@ -320,7 +324,9 @@ impl<T> ClashTable<T> {
         eq: impl FnMut(&T) -> bool,
         hasher: impl Fn(&T) -> u64,
     ) -> Option<Entry<'_, T>> {
-        let RefMut { guard, t } = self.tables.try_write_shard(hash)?;
+        // SAFETY: the guard is re-bundled with the derived entry in
+        // `OccupiedEntry`/`VacantEntry`, which drops them together.
+        let (guard, t) = unsafe { self.tables.try_write_shard(hash)?.into_parts() };
         match t.entry(hash, eq, hasher) {
             hash_table::Entry::Occupied(occupied_entry) => {
                 Some(Entry::Occupied(OccupiedEntry::new(guard, occupied_entry)))

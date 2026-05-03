@@ -4,8 +4,8 @@ use core::ops::{Deref, DerefMut};
 use std::fmt::{Debug, Formatter};
 
 pub struct Ref<'a, T: ?Sized> {
-    pub(crate) _guard: RwLockReadGuardDetached<'a>,
-    pub(crate) t: &'a T,
+    _guard: RwLockReadGuardDetached<'a>,
+    t: &'a T,
 }
 
 /// Kept for backwards compatiblity.
@@ -14,6 +14,18 @@ pub type MappedRef<'a, T> = Ref<'a, T>;
 impl<'a, T: ?Sized> Ref<'a, T> {
     pub(crate) fn new(guard: RwLockReadGuardDetached<'a>, t: &'a T) -> Self {
         Self { _guard: guard, t }
+    }
+
+    /// Splits the `Ref` into its guard and the protected reference.
+    ///
+    /// # Safety
+    ///
+    /// The returned `&'a T` is only valid while the returned guard is alive.
+    /// The caller must keep the guard live for at least as long as any use of
+    /// the reference, or re-bundle the two into a new `Ref` (or another type
+    /// whose `Drop` order ties them back together).
+    pub(crate) unsafe fn into_parts(self) -> (RwLockReadGuardDetached<'a>, &'a T) {
+        (self._guard, self.t)
     }
 
     pub fn value(&self) -> &T {
@@ -72,8 +84,8 @@ impl<T: AsRef<TDeref> + ?Sized, TDeref: ?Sized> AsRef<TDeref> for Ref<'_, T> {
 }
 
 pub struct RefMut<'a, T: ?Sized> {
-    pub(crate) guard: RwLockWriteGuardDetached<'a>,
-    pub(crate) t: &'a mut T,
+    guard: RwLockWriteGuardDetached<'a>,
+    t: &'a mut T,
 }
 
 /// Kept for backwards compatiblity.
@@ -82,6 +94,18 @@ pub type MappedRefMut<'a, T> = RefMut<'a, T>;
 impl<'a, T: ?Sized> RefMut<'a, T> {
     pub(crate) fn new(guard: RwLockWriteGuardDetached<'a>, t: &'a mut T) -> Self {
         Self { guard, t }
+    }
+
+    /// Splits the `RefMut` into its guard and the protected reference.
+    ///
+    /// # Safety
+    ///
+    /// The returned `&'a mut T` is only valid while the returned guard is alive.
+    /// The caller must keep the guard live for at least as long as any use of
+    /// the reference, or re-bundle the two into a new `RefMut` (or another type
+    /// whose `Drop` order ties them back together).
+    pub(crate) unsafe fn into_parts(self) -> (RwLockWriteGuardDetached<'a>, &'a mut T) {
+        (self.guard, self.t)
     }
 
     pub fn value(&self) -> &T {
