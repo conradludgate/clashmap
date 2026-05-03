@@ -36,7 +36,7 @@ impl<'a, K, V> Entry<'a, K, V> {
         V: Default,
     {
         match self {
-            Entry::Occupied(entry) => entry.into_ref(),
+            Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => entry.insert(V::default()),
         }
     }
@@ -45,7 +45,7 @@ impl<'a, K, V> Entry<'a, K, V> {
     /// otherwise a provided value and return a mutable reference to that.
     pub fn or_insert(self, value: V) -> RefMut<'a, K, V> {
         match self {
-            Entry::Occupied(entry) => entry.into_ref(),
+            Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => entry.insert(value),
         }
     }
@@ -54,7 +54,7 @@ impl<'a, K, V> Entry<'a, K, V> {
     /// otherwise insert the result of a provided function and return a mutable reference to that.
     pub fn or_insert_with(self, value: impl FnOnce() -> V) -> RefMut<'a, K, V> {
         match self {
-            Entry::Occupied(entry) => entry.into_ref(),
+            Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => entry.insert(value()),
         }
     }
@@ -64,7 +64,7 @@ impl<'a, K, V> Entry<'a, K, V> {
         value: impl FnOnce() -> Result<V, E>,
     ) -> Result<RefMut<'a, K, V>, E> {
         match self {
-            Entry::Occupied(entry) => Ok(entry.into_ref()),
+            Entry::Occupied(entry) => Ok(entry.into_mut()),
             Entry::Vacant(entry) => Ok(entry.insert(value()?)),
         }
     }
@@ -74,7 +74,7 @@ impl<'a, K, V> Entry<'a, K, V> {
         match self {
             Entry::Occupied(mut entry) => {
                 entry.insert(value);
-                entry.into_ref()
+                entry.into_mut()
             }
             Entry::Vacant(entry) => entry.insert(value),
         }
@@ -141,7 +141,7 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
         mem::replace(self.get_mut(), value)
     }
 
-    pub fn into_ref(self) -> RefMut<'a, K, V> {
+    pub fn into_mut(self) -> RefMut<'a, K, V> {
         self.entry.into_mut().into()
     }
 
