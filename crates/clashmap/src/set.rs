@@ -1,10 +1,10 @@
 use crate::iter_set::{Iter, OwningIter};
-#[cfg(feature = "raw-api")]
-use crate::lock::RwLock;
 use crate::setref::one::Ref;
 use crate::ClashMap;
 #[cfg(feature = "raw-api")]
 use crate::HashMap;
+#[cfg(feature = "raw-api")]
+use clashcore::lock::RwLock;
 use core::fmt;
 use core::hash::{BuildHasher, Hash};
 use core::iter::FromIterator;

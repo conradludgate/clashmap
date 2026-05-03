@@ -1,4 +1,3 @@
-use crate::sharded::ClashCollection;
 use crate::tableref::entry::{AbsentEntry, Entry, OccupiedEntry, VacantEntry};
 use crate::tableref::entrymut::{EntryMut, OccupiedEntryMut, VacantEntryMut};
 use crate::tableref::iter::{Iter, IterMut, OwningIter};
@@ -6,12 +5,13 @@ use crate::tableref::multiple::RefMulti;
 use crate::tableref::one::{Ref, RefMut};
 use crate::try_result::TryResult;
 use crate::{default_shard_amount, TryReserveError};
+use clashcore::sharded::ClashCollection;
 use core::fmt;
 use hashbrown::{hash_table, HashTable};
 use std::convert::Infallible;
 
 #[cfg(any(feature = "raw-api", feature = "typesize"))]
-use {crate::lock::RwLock, crossbeam_utils::CachePadded};
+use {clashcore::lock::RwLock, crossbeam_utils::CachePadded};
 
 /// ClashTable is an implementation of a concurrent hashtable in Rust.
 ///

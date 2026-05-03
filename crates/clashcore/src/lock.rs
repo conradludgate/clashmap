@@ -2,8 +2,8 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use parking_lot_core::{ParkToken, SpinWait, UnparkToken};
 
 pub type RwLock<T> = lock_api::RwLock<RawRwLock, T>;
-pub(crate) type RwLockReadGuardDetached<'a> = crate::util::RwLockReadGuardDetached<'a, RawRwLock>;
-pub(crate) type RwLockWriteGuardDetached<'a> = crate::util::RwLockWriteGuardDetached<'a, RawRwLock>;
+pub type RwLockReadGuardDetached<'a> = crate::util::RwLockReadGuardDetached<'a, RawRwLock>;
+pub type RwLockWriteGuardDetached<'a> = crate::util::RwLockWriteGuardDetached<'a, RawRwLock>;
 
 const READERS_PARKED: usize = 0b0001;
 const WRITERS_PARKED: usize = 0b0010;

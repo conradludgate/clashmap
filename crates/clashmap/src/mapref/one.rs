@@ -1,6 +1,6 @@
-use crate::lock::{RwLockReadGuardDetached, RwLockWriteGuardDetached};
 use crate::tableref;
 use crate::util::try_map;
+use clashcore::lock::{RwLockReadGuardDetached, RwLockWriteGuardDetached};
 use core::ops::{Deref, DerefMut};
 use std::fmt::{Debug, Formatter};
 

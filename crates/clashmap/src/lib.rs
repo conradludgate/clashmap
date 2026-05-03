@@ -13,11 +13,9 @@ pub mod setref;
 pub mod tableref;
 pub mod try_result;
 
-mod lock;
 mod map;
 mod read_only;
 mod set;
-mod sharded;
 mod table;
 mod util;
 
@@ -32,22 +30,25 @@ pub mod rayon {
 }
 
 #[cfg(not(feature = "raw-api"))]
-use crate::lock::RwLock;
+use clashcore::lock::RwLock;
 
 #[cfg(feature = "raw-api")]
-pub use crate::lock::{RawRwLock, RwLock};
+pub use clashcore::lock::{RawRwLock, RwLock};
+
+#[cfg(feature = "raw-api")]
+#[doc(inline)]
+pub use clashcore::sharded::ClashCollection;
+
+pub(crate) use clashcore::sharded::default_shard_amount;
 
 use crossbeam_utils::CachePadded;
 use hashbrown::hash_table;
-use std::sync::OnceLock;
 
 pub use map::ClashMap;
 pub use mapref::entry::{Entry, OccupiedEntry, VacantEntry};
 pub use mapref::entry_ref::{EntryRef, VacantEntryRef};
 pub use read_only::ReadOnlyView;
 pub use set::ClashSet;
-#[cfg(feature = "raw-api")]
-pub use sharded::ClashCollection;
 pub use table::ClashTable;
 
 pub(crate) type HashMap<K, V> = hash_table::HashTable<(K, V)>;
@@ -60,11 +61,3 @@ pub(crate) type Shard<K, V> = CachePadded<RwLock<HashMap<K, V>>>;
 #[non_exhaustive]
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TryReserveError {}
-
-#[no_mangle]
-fn default_shard_amount() -> usize {
-    static DEFAULT_SHARD_AMOUNT: OnceLock<usize> = OnceLock::new();
-    *DEFAULT_SHARD_AMOUNT.get_or_init(|| {
-        (std::thread::available_parallelism().map_or(1, usize::from) * 4).next_power_of_two()
-    })
-}

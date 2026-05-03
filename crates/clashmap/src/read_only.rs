@@ -1,8 +1,8 @@
-use crate::lock::RwLock;
-use crate::sharded::ClashCollection;
 use crate::ClashMap;
 use crate::ClashTable;
 use crate::HashMap;
+use clashcore::lock::RwLock;
+use clashcore::sharded::ClashCollection;
 use core::fmt;
 use core::hash::{BuildHasher, Hash};
 use crossbeam_utils::CachePadded;

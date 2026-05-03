@@ -1,7 +1,7 @@
 use hashbrown::hash_table;
 
 use super::one::RefMut;
-use crate::lock::RwLockWriteGuardDetached;
+use clashcore::lock::RwLockWriteGuardDetached;
 use core::mem;
 
 pub enum Entry<'a, T> {

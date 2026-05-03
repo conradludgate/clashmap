@@ -2,8 +2,8 @@ use crossbeam_utils::CachePadded;
 use hashbrown::HashTable;
 
 use super::multiple::{RefMulti, RefMutMulti};
-use crate::lock::{RwLock, RwLockReadGuardDetached, RwLockWriteGuardDetached};
 use crate::table::ClashTable;
+use clashcore::lock::{RwLock, RwLockReadGuardDetached, RwLockWriteGuardDetached};
 use core::slice;
 use std::sync::Arc;
 
