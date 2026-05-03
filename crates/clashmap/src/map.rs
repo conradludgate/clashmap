@@ -9,7 +9,7 @@ use crate::{
     VacantEntry,
 };
 use core::fmt;
-use core::hash::{BuildHasher, Hash, Hasher};
+use core::hash::{BuildHasher, Hash};
 use core::iter::FromIterator;
 use core::ops::{BitAnd, BitOr, Shl, Shr, Sub};
 use hashbrown::Equivalent;
@@ -314,9 +314,7 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
     }
 
     fn hash_u64<T: Hash>(&self, item: &T) -> u64 {
-        let mut hasher = self.hasher.build_hasher();
-        item.hash(&mut hasher);
-        hasher.finish()
+        self.hasher.hash_one(item)
     }
 
     /// Returns a reference to the map's [`BuildHasher`].
@@ -596,11 +594,7 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
     where
         K: Hash,
     {
-        self.table.shrink_to_fit(|(k, _v)| {
-            let mut hasher = self.hasher.build_hasher();
-            k.hash(&mut hasher);
-            hasher.finish()
-        });
+        self.table.shrink_to_fit(|(k, _v)| self.hasher.hash_one(k));
     }
 
     /// Retain elements that whose predicates return true
@@ -795,17 +789,12 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
         K: Eq + Hash,
     {
         let hash = self.hash_u64(&key);
-        match self.table.entry_mut(
-            hash,
-            |(k, _v)| k == &key,
-            |(k, _v)| {
-                let mut hasher = self.hasher.build_hasher();
-                k.hash(&mut hasher);
-                hasher.finish()
-            },
-        ) {
+        match self
+            .table
+            .entry_mut(hash, |(k, _v)| k == &key, |(k, _v)| self.hasher.hash_one(k))
+        {
             crate::tableref::entrymut::EntryMut::Occupied(occupied_entry_mut) => {
-                EntryMut::Occupied(OccupiedEntryMut::new(key, occupied_entry_mut.entry))
+                EntryMut::Occupied(OccupiedEntryMut::new(occupied_entry_mut.entry))
             }
             crate::tableref::entrymut::EntryMut::Vacant(vacant_entry_mut) => {
                 EntryMut::Vacant(VacantEntryMut::new(key, vacant_entry_mut.entry))
@@ -822,17 +811,12 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
         K: Eq + Hash,
     {
         let hash = self.hash_u64(&key);
-        match self.table.entry(
-            hash,
-            |(k, _v)| k == &key,
-            |(k, _v)| {
-                let mut hasher = self.hasher.build_hasher();
-                k.hash(&mut hasher);
-                hasher.finish()
-            },
-        ) {
+        match self
+            .table
+            .entry(hash, |(k, _v)| k == &key, |(k, _v)| self.hasher.hash_one(k))
+        {
             crate::tableref::entry::Entry::Occupied(entry) => {
-                Entry::Occupied(OccupiedEntry::new(entry, key))
+                Entry::Occupied(OccupiedEntry::new(entry))
             }
             crate::tableref::entry::Entry::Vacant(entry) => {
                 Entry::Vacant(VacantEntry::new(entry, key))
@@ -840,32 +824,31 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
         }
     }
 
-    /// Advanced entry API that tries to mimic `std::collections::HashMap`.
-    /// See the documentation on `clashmap::mapref::entry` for more details.
+    /// Advanced entry API that tries to mimic `std::collections::HashMap`,
+    /// keyed by a borrowed form of the key.
+    ///
+    /// The owned `K` is only materialised on insert into a vacant entry
+    /// (via [`ToOwned`]), so an `&str` lookup against a `ClashMap<String, _>`
+    /// doesn't allocate when the entry already exists.
     ///
     /// **Locking behaviour:** May deadlock if called when holding any sort of reference into the map.
-    pub fn entry_ref<Q>(&self, key: &Q) -> EntryRef<'_, K, V>
+    pub fn entry_ref<'a, 'b, Q>(&'a self, key: &'b Q) -> EntryRef<'a, 'b, K, Q, V>
     where
         Q: Hash + Equivalent<K> + ?Sized,
-        K: Clone + Hash,
+        K: Hash,
     {
         let hash = self.hash_u64(&key);
 
         match self.table.entry(
             hash,
             |(k, _v)| key.equivalent(k),
-            |(k, _v)| {
-                let mut hasher = self.hasher.build_hasher();
-                k.hash(&mut hasher);
-                hasher.finish()
-            },
+            |(k, _v)| self.hasher.hash_one(k),
         ) {
             crate::tableref::entry::Entry::Occupied(entry) => {
-                let key = entry.get().0.clone();
-                EntryRef::Occupied(OccupiedEntry::new(entry, key))
+                EntryRef::Occupied(OccupiedEntry::new(entry))
             }
             crate::tableref::entry::Entry::Vacant(entry) => {
-                EntryRef::Vacant(VacantEntryRef::new(entry))
+                EntryRef::Vacant(VacantEntryRef::new(entry, key))
             }
         }
     }
@@ -879,17 +862,12 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
         K: Eq + Hash,
     {
         let hash = self.hash_u64(&key);
-        match self.table.try_entry(
-            hash,
-            |(k, _v)| k == &key,
-            |(k, _v)| {
-                let mut hasher = self.hasher.build_hasher();
-                k.hash(&mut hasher);
-                hasher.finish()
-            },
-        )? {
+        match self
+            .table
+            .try_entry(hash, |(k, _v)| k == &key, |(k, _v)| self.hasher.hash_one(k))?
+        {
             crate::tableref::entry::Entry::Occupied(occupied_entry) => {
-                Some(Entry::Occupied(OccupiedEntry::new(occupied_entry, key)))
+                Some(Entry::Occupied(OccupiedEntry::new(occupied_entry)))
             }
             crate::tableref::entry::Entry::Vacant(vacant_entry) => {
                 Some(Entry::Vacant(VacantEntry::new(vacant_entry, key)))
@@ -909,11 +887,8 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
     where
         K: Hash,
     {
-        self.table.try_reserve(additional, |(k, _v)| {
-            let mut hasher = self.hasher.build_hasher();
-            k.hash(&mut hasher);
-            hasher.finish()
-        })
+        self.table
+            .try_reserve(additional, |(k, _v)| self.hasher.hash_one(k))
     }
 }
 

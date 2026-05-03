@@ -1,7 +1,5 @@
 use hashbrown::hash_table;
 
-use core::mem;
-
 pub enum EntryMut<'a, T> {
     Occupied(OccupiedEntryMut<'a, T>),
     Vacant(VacantEntryMut<'a, T>),
@@ -65,7 +63,7 @@ impl<'a, T> EntryMut<'a, T> {
     pub fn insert(self, value: T) -> &'a mut T {
         match self {
             EntryMut::Occupied(mut entry) => {
-                entry.insert(value);
+                *entry.get_mut() = value;
                 entry.into_mut()
             }
             EntryMut::Vacant(entry) => entry.insert(value),
@@ -73,15 +71,10 @@ impl<'a, T> EntryMut<'a, T> {
     }
 
     /// Sets the value of the entry, and returns an OccupiedEntry.
-    ///
-    /// If you are not interested in the occupied entry,
-    /// consider [`insert`] as it doesn't need to clone the key.
-    ///
-    /// [`insert`]: EntryMut::insert
     pub fn insert_entry(self, value: T) -> OccupiedEntryMut<'a, T> {
         match self {
             EntryMut::Occupied(mut entry) => {
-                entry.insert(value);
+                *entry.get_mut() = value;
                 entry
             }
             EntryMut::Vacant(entry) => entry.insert_entry(value),
@@ -127,10 +120,6 @@ impl<'a, T> OccupiedEntryMut<'a, T> {
         self.entry.get_mut()
     }
 
-    pub fn insert(&mut self, value: T) -> T {
-        mem::replace(self.get_mut(), value)
-    }
-
     pub fn into_mut(self) -> &'a mut T {
         self.entry.into_mut()
     }
@@ -143,5 +132,20 @@ impl<'a, T> OccupiedEntryMut<'a, T> {
     pub fn remove_entry(self) -> (T, VacantEntryMut<'a, T>) {
         let (v, e) = self.entry.remove();
         (v, VacantEntryMut::new(e))
+    }
+
+    /// Provides owned access to the value of the entry and allows to replace
+    /// or remove it based on the value of the returned option.
+    ///
+    /// The hash of the new item must be the same as the old item, otherwise
+    /// future lookups for the new item may fail to find it.
+    pub fn replace_entry_with<F>(self, f: F) -> EntryMut<'a, T>
+    where
+        F: FnOnce(T) -> Option<T>,
+    {
+        match self.entry.replace_entry_with(f) {
+            hash_table::Entry::Occupied(o) => EntryMut::Occupied(OccupiedEntryMut::new(o)),
+            hash_table::Entry::Vacant(v) => EntryMut::Vacant(VacantEntryMut::new(v)),
+        }
     }
 }

@@ -2,7 +2,6 @@ use hashbrown::hash_table;
 
 use super::one::RefMut;
 use clashcore::lock::RwLockWriteGuardDetached;
-use core::mem;
 
 pub enum Entry<'a, T> {
     Occupied(OccupiedEntry<'a, T>),
@@ -67,7 +66,7 @@ impl<'a, T> Entry<'a, T> {
     pub fn insert(self, value: T) -> RefMut<'a, T> {
         match self {
             Entry::Occupied(mut entry) => {
-                entry.insert(value);
+                *entry.get_mut() = value;
                 entry.into_mut()
             }
             Entry::Vacant(entry) => entry.insert(value),
@@ -75,15 +74,10 @@ impl<'a, T> Entry<'a, T> {
     }
 
     /// Sets the value of the entry, and returns an OccupiedEntry.
-    ///
-    /// If you are not interested in the occupied entry,
-    /// consider [`insert`] as it doesn't need to clone the key.
-    ///
-    /// [`insert`]: Entry::insert
     pub fn insert_entry(self, value: T) -> OccupiedEntry<'a, T> {
         match self {
             Entry::Occupied(mut entry) => {
-                entry.insert(value);
+                *entry.get_mut() = value;
                 entry
             }
             Entry::Vacant(entry) => entry.insert_entry(value),
@@ -154,10 +148,6 @@ impl<'a, T> OccupiedEntry<'a, T> {
         self.entry.get_mut()
     }
 
-    pub fn insert(&mut self, value: T) -> T {
-        mem::replace(self.get_mut(), value)
-    }
-
     pub fn into_mut(self) -> RefMut<'a, T> {
         RefMut::from_raw_parts(self.guard, self.entry.into_mut())
     }
@@ -167,25 +157,33 @@ impl<'a, T> OccupiedEntry<'a, T> {
         t
     }
 
-    pub fn replace_entry(self, value: T) -> T {
-        let t = mem::replace(self.entry.into_mut(), value);
-        t
+    /// Provides owned access to the value of the entry and allows to replace
+    /// or remove it based on the value of the returned option.
+    ///
+    /// The hash of the new item must be the same as the old item, otherwise
+    /// future lookups for the new item may fail to find it.
+    pub fn replace_entry_with<F>(self, f: F) -> Entry<'a, T>
+    where
+        F: FnOnce(T) -> Option<T>,
+    {
+        match self.entry.replace_entry_with(f) {
+            hash_table::Entry::Occupied(o) => Entry::Occupied(OccupiedEntry::new(self.guard, o)),
+            hash_table::Entry::Vacant(v) => Entry::Vacant(VacantEntry::new(self.guard, v)),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::hash_map::RandomState;
-    use std::hash::{BuildHasher, Hash, Hasher};
+    use std::hash::{BuildHasher, Hash};
 
     use crate::ClashTable;
 
     use super::*;
 
     fn hash_one(s: &impl BuildHasher, h: impl Hash) -> u64 {
-        let mut s = s.build_hasher();
-        h.hash(&mut s);
-        s.finish()
+        s.hash_one(&h)
     }
 
     #[test]

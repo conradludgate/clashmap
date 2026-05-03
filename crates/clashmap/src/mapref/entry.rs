@@ -29,14 +29,6 @@ impl<'a, K, V> Entry<'a, K, V> {
         }
     }
 
-    /// Into the key of the entry.
-    pub fn into_key(self) -> K {
-        match self {
-            Entry::Occupied(entry) => entry.into_key(),
-            Entry::Vacant(entry) => entry.into_key(),
-        }
-    }
-
     /// Return a mutable reference to the element if it exists,
     /// otherwise insert the default and return a mutable reference to that.
     pub fn or_default(self) -> RefMut<'a, K, V>
@@ -44,7 +36,7 @@ impl<'a, K, V> Entry<'a, K, V> {
         V: Default,
     {
         match self {
-            Entry::Occupied(entry) => entry.into_ref(),
+            Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => entry.insert(V::default()),
         }
     }
@@ -53,7 +45,7 @@ impl<'a, K, V> Entry<'a, K, V> {
     /// otherwise a provided value and return a mutable reference to that.
     pub fn or_insert(self, value: V) -> RefMut<'a, K, V> {
         match self {
-            Entry::Occupied(entry) => entry.into_ref(),
+            Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => entry.insert(value),
         }
     }
@@ -62,7 +54,7 @@ impl<'a, K, V> Entry<'a, K, V> {
     /// otherwise insert the result of a provided function and return a mutable reference to that.
     pub fn or_insert_with(self, value: impl FnOnce() -> V) -> RefMut<'a, K, V> {
         match self {
-            Entry::Occupied(entry) => entry.into_ref(),
+            Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => entry.insert(value()),
         }
     }
@@ -72,7 +64,7 @@ impl<'a, K, V> Entry<'a, K, V> {
         value: impl FnOnce() -> Result<V, E>,
     ) -> Result<RefMut<'a, K, V>, E> {
         match self {
-            Entry::Occupied(entry) => Ok(entry.into_ref()),
+            Entry::Occupied(entry) => Ok(entry.into_mut()),
             Entry::Vacant(entry) => Ok(entry.insert(value()?)),
         }
     }
@@ -82,28 +74,33 @@ impl<'a, K, V> Entry<'a, K, V> {
         match self {
             Entry::Occupied(mut entry) => {
                 entry.insert(value);
-                entry.into_ref()
+                entry.into_mut()
             }
             Entry::Vacant(entry) => entry.insert(value),
         }
     }
 
     /// Sets the value of the entry, and returns an OccupiedEntry.
-    ///
-    /// If you are not interested in the occupied entry,
-    /// consider [`insert`] as it doesn't need to clone the key.
-    ///
-    /// [`insert`]: Entry::insert
-    pub fn insert_entry(self, value: V) -> OccupiedEntry<'a, K, V>
-    where
-        K: Clone,
-    {
+    pub fn insert_entry(self, value: V) -> OccupiedEntry<'a, K, V> {
         match self {
             Entry::Occupied(mut entry) => {
                 entry.insert(value);
                 entry
             }
             Entry::Vacant(entry) => entry.insert_entry(value),
+        }
+    }
+
+    /// If the entry is occupied, calls `f` with shared access to the key and
+    /// owned access to the value, replacing or removing the entry depending on
+    /// the returned `Option`. Vacant entries are returned unchanged.
+    pub fn and_replace_entry_with<F>(self, f: F) -> Self
+    where
+        F: FnOnce(&K, V) -> Option<V>,
+    {
+        match self {
+            Entry::Occupied(entry) => entry.replace_entry_with(f),
+            Entry::Vacant(_) => self,
         }
     }
 }
@@ -123,12 +120,8 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
     }
 
     /// Sets the value of the entry with the VacantEntry’s key, and returns an OccupiedEntry.
-    pub fn insert_entry(self, value: V) -> OccupiedEntry<'a, K, V>
-    where
-        K: Clone,
-    {
-        let entry = self.entry.insert_entry((self.key.clone(), value));
-        OccupiedEntry::new(entry, self.key)
+    pub fn insert_entry(self, value: V) -> OccupiedEntry<'a, K, V> {
+        OccupiedEntry::new(self.entry.insert_entry((self.key, value)))
     }
 
     pub fn into_key(self) -> K {
@@ -142,12 +135,11 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
 
 pub struct OccupiedEntry<'a, K, V> {
     entry: tableref::entry::OccupiedEntry<'a, (K, V)>,
-    key: K,
 }
 
 impl<'a, K, V> OccupiedEntry<'a, K, V> {
-    pub(crate) fn new(entry: tableref::entry::OccupiedEntry<'a, (K, V)>, key: K) -> Self {
-        Self { key, entry }
+    pub(crate) fn new(entry: tableref::entry::OccupiedEntry<'a, (K, V)>) -> Self {
+        Self { entry }
     }
 
     pub fn get(&self) -> &V {
@@ -162,12 +154,8 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
         mem::replace(self.get_mut(), value)
     }
 
-    pub fn into_ref(self) -> RefMut<'a, K, V> {
+    pub fn into_mut(self) -> RefMut<'a, K, V> {
         self.entry.into_mut().into()
-    }
-
-    pub fn into_key(self) -> K {
-        self.key
     }
 
     pub fn key(&self) -> &K {
@@ -182,11 +170,27 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
         self.entry.remove()
     }
 
-    pub fn replace_entry(self, value: V) -> (K, V) {
-        // SAFETY: `_guard` is bound for the remainder of the function, so it
-        // outlives every use of `t`.
-        let (_guard, t) = unsafe { self.entry.into_mut().into_raw_parts() };
-        mem::replace(t, (self.key, value))
+    /// Provides shared access to the key and owned access to the value of the
+    /// entry, replacing or removing it based on the returned `Option`.
+    pub fn replace_entry_with<F>(self, f: F) -> Entry<'a, K, V>
+    where
+        F: FnOnce(&K, V) -> Option<V>,
+    {
+        let mut spare_key = None;
+        let underlying = self.entry.replace_entry_with(|(k, v)| match f(&k, v) {
+            Some(new_v) => Some((k, new_v)),
+            None => {
+                spare_key = Some(k);
+                None
+            }
+        });
+        match underlying {
+            tableref::entry::Entry::Occupied(o) => Entry::Occupied(OccupiedEntry::new(o)),
+            tableref::entry::Entry::Vacant(v) => {
+                let key = spare_key.expect("None branch must capture key");
+                Entry::Vacant(VacantEntry::new(v, key))
+            }
+        }
     }
 }
 
@@ -230,5 +234,46 @@ mod tests {
         drop(entry);
 
         assert_eq!(*map.get(&1).unwrap(), 2);
+    }
+
+    #[test]
+    fn test_replace_entry_with_some() {
+        let map: ClashMap<u32, u32> = ClashMap::new();
+        map.insert(1, 10);
+
+        let entry = match map.entry(1) {
+            Entry::Occupied(o) => o.replace_entry_with(|&k, v| {
+                assert_eq!(k, 1);
+                assert_eq!(v, 10);
+                Some(v + 1)
+            }),
+            Entry::Vacant(_) => unreachable!(),
+        };
+
+        assert!(matches!(&entry, Entry::Occupied(o) if *o.get() == 11));
+        drop(entry);
+        assert_eq!(*map.get(&1).unwrap(), 11);
+    }
+
+    #[test]
+    fn test_replace_entry_with_none() {
+        let map: ClashMap<u32, u32> = ClashMap::new();
+        map.insert(1, 10);
+
+        let entry = match map.entry(1) {
+            Entry::Occupied(o) => o.replace_entry_with(|_, _| None),
+            Entry::Vacant(_) => unreachable!(),
+        };
+
+        assert!(matches!(&entry, Entry::Vacant(v) if *v.key() == 1));
+        drop(entry);
+        assert!(map.get(&1).is_none());
+    }
+
+    #[test]
+    fn test_and_replace_entry_with_vacant_is_noop() {
+        let map: ClashMap<u32, u32> = ClashMap::new();
+        let entry = map.entry(1).and_replace_entry_with(|_, _| panic!());
+        assert!(matches!(entry, Entry::Vacant(_)));
     }
 }

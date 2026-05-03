@@ -8,7 +8,6 @@ use core::hash::{BuildHasher, Hash};
 use crossbeam_utils::CachePadded;
 use hashbrown::Equivalent;
 use std::collections::hash_map::RandomState;
-use std::hash::Hasher;
 
 /// A read-only view into a `ClashMap`. Allows to obtain raw references to the stored values.
 pub struct ReadOnlyView<K, V, S = RandomState> {
@@ -74,11 +73,7 @@ impl<K, V, S> ReadOnlyView<K, V, S> {
 
 impl<'a, K: 'a + Eq + Hash, V: 'a, S: BuildHasher> ReadOnlyView<K, V, S> {
     fn hash_u64<T: Hash>(&self, item: &T) -> u64 {
-        let mut hasher = self.hasher.build_hasher();
-
-        item.hash(&mut hasher);
-
-        hasher.finish()
+        self.hasher.hash_one(item)
     }
 
     fn _determine_shard(&self, hash: usize) -> usize {
