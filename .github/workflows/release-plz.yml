@@ -13,6 +13,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: read
+      id-token: write
     steps:
       - &checkout
         name: Checkout repository
@@ -29,7 +30,6 @@ jobs:
           command: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           # Override the project's rust-toolchain.toml (pinned to MSRV)
           # so release-plz can use modern subcommands like `cargo info`.
           RUSTUP_TOOLCHAIN: stable
