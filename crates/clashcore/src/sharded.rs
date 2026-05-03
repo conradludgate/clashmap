@@ -106,12 +106,28 @@ impl<T> ClashCollection<T> {
     }
 
     /// Finds which shard a certain hash is stored in.
+    #[inline(always)]
     pub fn determine_shard(&self, hash: usize) -> usize {
-        self._determine_shard(hash)
-    }
-}
+        // Leave the high 7 bits for the HashBrown SIMD tag.
+        let idx = (hash << 7) >> self.shift;
 
-impl<T> ClashCollection<T> {
+        // hint to llvm that the panic bounds check can be removed
+        if idx >= self.shards.len() {
+            if cfg!(debug_assertions) {
+                unreachable!("invalid shard index")
+            } else {
+                // SAFETY: shards is always a power of two,
+                // and shift is calculated such that the resulting idx is always
+                // less than the shards length
+                unsafe {
+                    std::hint::unreachable_unchecked();
+                }
+            }
+        }
+
+        idx
+    }
+
     /// Creates a new `ClashCollection`.
     pub fn new(init: impl FnMut() -> T) -> Self {
         ClashCollection::with_shard_amount(default_shard_amount(), init)
@@ -132,28 +148,6 @@ impl<T> ClashCollection<T> {
             .collect();
 
         Self { shift, shards }
-    }
-
-    #[inline(always)]
-    pub(crate) fn _determine_shard(&self, hash: usize) -> usize {
-        // Leave the high 7 bits for the HashBrown SIMD tag.
-        let idx = (hash << 7) >> self.shift;
-
-        // hint to llvm that the panic bounds check can be removed
-        if idx >= self.shards.len() {
-            if cfg!(debug_assertions) {
-                unreachable!("invalid shard index")
-            } else {
-                // SAFETY: shards is always a power of two,
-                // and shift is calculated such that the resulting idx is always
-                // less than the shards length
-                unsafe {
-                    std::hint::unreachable_unchecked();
-                }
-            }
-        }
-
-        idx
     }
 
     // fn for_each(&self, mut f: impl FnMut(&T)) {
@@ -190,7 +184,7 @@ impl<T> ClashCollection<T> {
     /// guard bundled with a borrow of the shard's data. Blocks until the
     /// lock is available.
     pub fn get_read_shard(&self, hash: u64) -> Ref<'_, T> {
-        let idx = self._determine_shard(hash as usize);
+        let idx = self.determine_shard(hash as usize);
         let shard = self.shards[idx].read();
 
         // SAFETY: the data is re-bundled with the guard inside the returned
@@ -203,7 +197,7 @@ impl<T> ClashCollection<T> {
     /// guard bundled with a mutable borrow of the shard's data. Blocks until
     /// the lock is available.
     pub fn get_write_shard(&self, hash: u64) -> RefMut<'_, T> {
-        let idx = self._determine_shard(hash as usize);
+        let idx = self.determine_shard(hash as usize);
         let shard = self.shards[idx].write();
 
         // SAFETY: the data is re-bundled with the guard inside the returned
@@ -215,7 +209,7 @@ impl<T> ClashCollection<T> {
     /// Like [`ClashCollection::get_read_shard`] but returns `None` instead of
     /// blocking if the lock is currently held exclusively.
     pub fn try_read_shard(&self, hash: u64) -> Option<Ref<'_, T>> {
-        let idx = self._determine_shard(hash as usize);
+        let idx = self.determine_shard(hash as usize);
         let shard = self.shards[idx].try_read()?;
 
         // SAFETY: the data is re-bundled with the guard inside the returned
@@ -227,7 +221,7 @@ impl<T> ClashCollection<T> {
     /// Like [`ClashCollection::get_write_shard`] but returns `None` instead
     /// of blocking if the lock is currently held by anyone else.
     pub fn try_write_shard(&self, hash: u64) -> Option<RefMut<'_, T>> {
-        let idx = self._determine_shard(hash as usize);
+        let idx = self.determine_shard(hash as usize);
         let shard = self.shards[idx].try_write()?;
 
         // SAFETY: the data is re-bundled with the guard inside the returned
@@ -240,7 +234,7 @@ impl<T> ClashCollection<T> {
     /// taking any lock — sound only because `&mut self` proves there are no
     /// concurrent accessors.
     pub fn get_mut(&mut self, hash: u64) -> &mut T {
-        let idx = self._determine_shard(hash as usize);
+        let idx = self.determine_shard(hash as usize);
         self.shards[idx].get_mut()
     }
 }
