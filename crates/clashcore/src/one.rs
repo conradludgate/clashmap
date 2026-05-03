@@ -79,13 +79,13 @@ impl<'a, T: ?Sized> Ref<'a, T> {
     }
 }
 
-impl<T: Debug> Debug for Ref<'_, T> {
+impl<T: Debug + ?Sized> Debug for Ref<'_, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.t.fmt(f)
     }
 }
 
-impl<T> Deref for Ref<'_, T> {
+impl<T: ?Sized> Deref for Ref<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &T {

@@ -41,6 +41,16 @@ const WRITERS_PARKED: usize = 0b0010;
 const ONE_READER: usize = 0b0100;
 const ONE_WRITER: usize = !(READERS_PARKED | WRITERS_PARKED);
 
+/// A small, single-CAS-on-the-fast-path reader-writer lock implementing
+/// [`lock_api::RawRwLock`] (and [`lock_api::RawRwLockDowngrade`]).
+///
+/// Intentionally *unfair*: a reader that arrives while a writer is waiting
+/// may still acquire the lock, which trades worst-case writer latency for
+/// higher overall throughput on the read-heavy workloads `clashmap`
+/// targets.
+///
+/// Construct via the `lock_api` interface — typically by going through
+/// [`RwLock::new`] — rather than by name.
 pub struct RawRwLock {
     state: AtomicUsize,
 }

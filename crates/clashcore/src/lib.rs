@@ -29,10 +29,12 @@
 //!
 //! # Stability
 //!
-//! `clashcore` follows semver. The detached lock guards and the
-//! `Ref*::new`/`Ref*::into_parts` constructors are unsafe building blocks
-//! intended for crates implementing their own sharded structures; their
-//! safety contracts are documented on each item.
+//! `clashcore` follows semver. A handful of items are `unsafe` building
+//! blocks intended for crates implementing their own sharded structures —
+//! the [`detach_from`](lock::RwLockReadGuardDetached) /
+//! [`downgrade`](lock::RwLockWriteGuardDetached) constructors on the
+//! detached guards, and `Ref*::into_raw_parts`. Their safety contracts are
+//! documented on each item.
 //!
 //! [`clashmap`]: https://docs.rs/clashmap
 
