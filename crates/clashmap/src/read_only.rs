@@ -39,33 +39,32 @@ impl<K: Eq + Hash + fmt::Debug, V: fmt::Debug, S: BuildHasher> fmt::Debug
 
 impl<K, V, S> ReadOnlyView<K, V, S> {
     pub(crate) fn new(map: ClashMap<K, V, S>) -> Self {
+        let shift = map.table.tables.shift();
         Self {
             shards: map
                 .table
                 .tables
-                .shards
+                .into_shards()
                 .into_vec()
                 .into_iter()
                 .map(|s| s.into_inner().into_inner())
                 .collect(),
-            shift: map.table.tables.shift,
+            shift,
             hasher: map.hasher,
         }
     }
 
     /// Consumes this `ReadOnlyView`, returning the underlying `ClashMap`.
     pub fn into_inner(self) -> ClashMap<K, V, S> {
+        let shards = self
+            .shards
+            .into_vec()
+            .into_iter()
+            .map(|s| CachePadded::new(RwLock::new(s)))
+            .collect();
         ClashMap {
             table: ClashTable {
-                tables: ClashCollection {
-                    shards: self
-                        .shards
-                        .into_vec()
-                        .into_iter()
-                        .map(|s| CachePadded::new(RwLock::new(s)))
-                        .collect(),
-                    shift: self.shift,
-                },
+                tables: ClashCollection::from_parts(self.shift, shards),
             },
             hasher: self.hasher,
         }

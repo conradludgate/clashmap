@@ -54,10 +54,13 @@ impl<'a, K, V: ?Sized> Ref<'a, K, V> {
 
 impl<'a, K, V> From<tableref::one::Ref<'a, (K, V)>> for Ref<'a, K, V> {
     fn from(value: tableref::one::Ref<'a, (K, V)>) -> Self {
+        // SAFETY: the guard and references are immediately re-bundled into a
+        // new `Ref`, which drops them together.
+        let (guard, t) = unsafe { value.into_parts() };
         Self {
-            _guard: value._guard,
-            k: &value.t.0,
-            v: &value.t.1,
+            _guard: guard,
+            k: &t.0,
+            v: &t.1,
         }
     }
 }
@@ -101,10 +104,13 @@ pub type MappedRefMut<'a, K, V> = RefMut<'a, K, V>;
 
 impl<'a, K, V> From<tableref::one::RefMut<'a, (K, V)>> for RefMut<'a, K, V> {
     fn from(inner: tableref::one::RefMut<'a, (K, V)>) -> Self {
+        // SAFETY: the guard and references are immediately re-bundled into a
+        // new `RefMut`, which drops them together.
+        let (guard, t) = unsafe { inner.into_parts() };
         Self {
-            _guard: inner.guard,
-            k: &inner.t.0,
-            v: &mut inner.t.1,
+            _guard: guard,
+            k: &t.0,
+            v: &mut t.1,
         }
     }
 }

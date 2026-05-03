@@ -9,8 +9,8 @@ use crossbeam_utils::CachePadded;
 ///
 /// Requires the `raw-api` feature to be enabled.
 pub struct ClashCollection<T> {
-    pub(crate) shift: usize,
-    pub(crate) shards: Box<[CachePadded<RwLock<T>>]>,
+    shift: usize,
+    shards: Box<[CachePadded<RwLock<T>>]>,
 }
 
 impl<T: Clone> Clone for ClashCollection<T> {
@@ -36,7 +36,6 @@ impl<T: Default> Default for ClashCollection<T> {
     }
 }
 
-#[allow(dead_code)]
 impl<T> ClashCollection<T> {
     /// Allows you to peek at the inner shards that store your data.
     pub fn shards(&self) -> &[CachePadded<RwLock<T>>] {
@@ -51,6 +50,19 @@ impl<T> ClashCollection<T> {
     /// Consumes this `ClashCollection` and returns the inner shards.
     pub fn into_shards(self) -> Box<[CachePadded<RwLock<T>>]> {
         self.shards
+    }
+
+    /// Returns the bit shift used to map a hash to a shard index.
+    pub(crate) fn shift(&self) -> usize {
+        self.shift
+    }
+
+    /// Reconstructs a `ClashCollection` from its raw parts.
+    ///
+    /// `shift` must equal `usize::BITS - shards.len().trailing_zeros()` and
+    /// `shards.len()` must be a non-zero power of two.
+    pub(crate) fn from_parts(shift: usize, shards: Box<[CachePadded<RwLock<T>>]>) -> Self {
+        Self { shift, shards }
     }
 
     /// Finds which shard a certain hash is stored in.

@@ -183,7 +183,10 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
     }
 
     pub fn replace_entry(self, value: V) -> (K, V) {
-        mem::replace(self.entry.into_mut().t, (self.key, value))
+        // SAFETY: `_guard` is bound for the remainder of the function, so it
+        // outlives every use of `t`.
+        let (_guard, t) = unsafe { self.entry.into_mut().into_parts() };
+        mem::replace(t, (self.key, value))
     }
 }
 
