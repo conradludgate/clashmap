@@ -1,8 +1,39 @@
+//! The reader-writer lock used by every shard.
+//!
+//! [`RawRwLock`] is a small, lock-free-on-the-uncontended-path implementation
+//! built on top of [`parking_lot_core`]. It is intentionally *unfair*: a
+//! reader that arrives while a writer is waiting may still acquire the lock,
+//! which trades worst-case writer latency for higher overall throughput on
+//! read-heavy workloads (the dominant pattern in `clashmap`).
+//!
+//! [`RwLock`] is the [`lock_api`]-flavoured `RwLock<T>` parameterised over
+//! [`RawRwLock`]. [`RwLockReadGuardDetached`] and
+//! [`RwLockWriteGuardDetached`] are the detached guards used to bundle a
+//! held lock with a borrow into the protected data; see
+//! [`crate::one::Ref`] and [`crate::one::RefMut`] for the bundled form.
+
 use core::sync::atomic::{AtomicUsize, Ordering};
 use parking_lot_core::{ParkToken, SpinWait, UnparkToken};
 
+/// The [`lock_api`] `RwLock` parameterised over [`RawRwLock`].
 pub type RwLock<T> = lock_api::RwLock<RawRwLock, T>;
+
+/// A read guard that holds the lock but does not carry a reference to the
+/// data.
+///
+/// Obtain one via the inherent `detach_from` constructor; pair it with the
+/// returned reference inside a [`crate::one::Ref`] so the two are dropped
+/// together. The returned reference is only valid for as long as the guard
+/// is alive.
 pub type RwLockReadGuardDetached<'a> = crate::util::RwLockReadGuardDetached<'a, RawRwLock>;
+
+/// A write guard that holds the lock but does not carry a reference to the
+/// data.
+///
+/// Obtain one via the inherent `detach_from` constructor; pair it with the
+/// returned reference inside a [`crate::one::RefMut`] so the two are dropped
+/// together. The returned reference is only valid for as long as the guard
+/// is alive.
 pub type RwLockWriteGuardDetached<'a> = crate::util::RwLockWriteGuardDetached<'a, RawRwLock>;
 
 const READERS_PARKED: usize = 0b0001;
