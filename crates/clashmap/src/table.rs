@@ -284,7 +284,7 @@ impl<T> ClashTable<T> {
     ) -> Result<OccupiedEntry<'_, T>, AbsentEntry<'_, T>> {
         // SAFETY: the guard is re-bundled with the derived entry in
         // `OccupiedEntry`/`AbsentEntry`, which drops them together.
-        let (guard, t) = unsafe { self.tables.get_write_shard(hash).into_parts() };
+        let (guard, t) = unsafe { self.tables.get_write_shard(hash).into_raw_parts() };
         match t.find_entry(hash, eq) {
             Ok(occupied_entry) => Ok(OccupiedEntry::new(guard, occupied_entry)),
             Err(absent_entry) => Err(AbsentEntry::new(guard, absent_entry)),
@@ -303,7 +303,7 @@ impl<T> ClashTable<T> {
     ) -> Entry<'_, T> {
         // SAFETY: the guard is re-bundled with the derived entry in
         // `OccupiedEntry`/`VacantEntry`, which drops them together.
-        let (guard, t) = unsafe { self.tables.get_write_shard(hash).into_parts() };
+        let (guard, t) = unsafe { self.tables.get_write_shard(hash).into_raw_parts() };
         match t.entry(hash, eq, hasher) {
             hash_table::Entry::Occupied(occupied_entry) => {
                 Entry::Occupied(OccupiedEntry::new(guard, occupied_entry))
@@ -326,7 +326,7 @@ impl<T> ClashTable<T> {
     ) -> Option<Entry<'_, T>> {
         // SAFETY: the guard is re-bundled with the derived entry in
         // `OccupiedEntry`/`VacantEntry`, which drops them together.
-        let (guard, t) = unsafe { self.tables.try_write_shard(hash)?.into_parts() };
+        let (guard, t) = unsafe { self.tables.try_write_shard(hash)?.into_raw_parts() };
         match t.entry(hash, eq, hasher) {
             hash_table::Entry::Occupied(occupied_entry) => {
                 Some(Entry::Occupied(OccupiedEntry::new(guard, occupied_entry)))

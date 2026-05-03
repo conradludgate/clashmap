@@ -144,7 +144,7 @@ where
                 let guard = Arc::new(guard);
                 shard.iter().map(move |kv| {
                     let guard = Arc::clone(&guard);
-                    RefMulti::new(tableref::multiple::RefMulti::new(guard, kv))
+                    RefMulti::new(tableref::multiple::RefMulti::from_raw_parts(guard, kv))
                 })
             })
             .drive_unindexed(consumer)
@@ -206,7 +206,7 @@ where
                 let guard = Arc::new(guard);
                 shard.iter_mut().map(move |kv| {
                     let guard = Arc::clone(&guard);
-                    RefMutMulti::new(tableref::multiple::RefMutMulti::new(guard, kv))
+                    RefMutMulti::new(tableref::multiple::RefMutMulti::from_raw_parts(guard, kv))
                 })
             })
             .drive_unindexed(consumer)

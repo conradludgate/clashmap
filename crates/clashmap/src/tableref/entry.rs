@@ -124,7 +124,7 @@ impl<'a, T> VacantEntry<'a, T> {
     pub fn insert(self, value: T) -> RefMut<'a, T> {
         let occupied = self.entry.insert(value);
 
-        RefMut::new(self.guard, occupied.into_mut())
+        RefMut::from_raw_parts(self.guard, occupied.into_mut())
     }
 
     /// Sets the value of the entry with the VacantEntry’s key, and returns an OccupiedEntry.
@@ -159,7 +159,7 @@ impl<'a, T> OccupiedEntry<'a, T> {
     }
 
     pub fn into_mut(self) -> RefMut<'a, T> {
-        RefMut::new(self.guard, self.entry.into_mut())
+        RefMut::from_raw_parts(self.guard, self.entry.into_mut())
     }
 
     pub fn remove(self) -> T {

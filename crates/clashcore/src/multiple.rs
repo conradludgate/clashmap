@@ -38,14 +38,10 @@ impl<'a, T> RefMulti<'a, T> {
     /// Bundles an `Arc`-shared detached read guard with a borrow into the
     /// data the guard protects.
     ///
-    /// The caller is asserting that `v` points inside the data protected by
-    /// `guard`. Passing an unrelated reference compiles, but breaks the
-    /// type's invariant.
-    pub fn new(guard: Arc<RwLockReadGuardDetached<'a>>, v: &'a T) -> Self {
-        Self {
-            _guard: guard,
-            t: v,
-        }
+    /// `t` is conventionally a borrow into the data the lock held by `guard`
+    /// protects, but no operation on `RefMulti` relies on this.
+    pub fn from_raw_parts(guard: Arc<RwLockReadGuardDetached<'a>>, t: &'a T) -> Self {
+        Self { _guard: guard, t }
     }
 
     /// Returns a borrow of the protected data.
@@ -77,11 +73,11 @@ impl<'a, T> RefMutMulti<'a, T> {
     /// Bundles an `Arc`-shared detached write guard with a mutable borrow
     /// into the data the guard protects.
     ///
-    /// The caller is asserting that `t` points inside the data protected by
-    /// `guard`, and that no other `RefMutMulti` sharing the same guard
-    /// aliases this borrow. Disjointness is the iterator's responsibility,
-    /// not the type's.
-    pub fn new(guard: Arc<RwLockWriteGuardDetached<'a>>, t: &'a mut T) -> Self {
+    /// `t` is conventionally a borrow into the data the lock held by `guard`
+    /// protects. Rust's `&mut T` aliasing rule guarantees `t` is disjoint
+    /// from every other live `&mut` into the same data, including those
+    /// inside other `RefMutMulti`s sharing the same guard.
+    pub fn from_raw_parts(guard: Arc<RwLockWriteGuardDetached<'a>>, t: &'a mut T) -> Self {
         Self { _guard: guard, t }
     }
 

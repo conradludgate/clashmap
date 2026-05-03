@@ -56,7 +56,7 @@ impl<'a, K, V> From<tableref::one::Ref<'a, (K, V)>> for Ref<'a, K, V> {
     fn from(value: tableref::one::Ref<'a, (K, V)>) -> Self {
         // SAFETY: the guard and references are immediately re-bundled into a
         // new `Ref`, which drops them together.
-        let (guard, t) = unsafe { value.into_parts() };
+        let (guard, t) = unsafe { value.into_raw_parts() };
         Self {
             _guard: guard,
             k: &t.0,
@@ -106,7 +106,7 @@ impl<'a, K, V> From<tableref::one::RefMut<'a, (K, V)>> for RefMut<'a, K, V> {
     fn from(inner: tableref::one::RefMut<'a, (K, V)>) -> Self {
         // SAFETY: the guard and references are immediately re-bundled into a
         // new `RefMut`, which drops them together.
-        let (guard, t) = unsafe { inner.into_parts() };
+        let (guard, t) = unsafe { inner.into_raw_parts() };
         Self {
             _guard: guard,
             k: &t.0,

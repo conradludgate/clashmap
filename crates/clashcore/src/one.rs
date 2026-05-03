@@ -16,8 +16,8 @@ use std::fmt::{Debug, Formatter};
 /// A read guard bundled with a borrow into the data it protects.
 ///
 /// Holds a shared lock for as long as the `Ref` is alive. Dereferences to
-/// `T`. Construct with [`Ref::new`] (typically inside a shard accessor like
-/// [`crate::ClashCollection::get_read_shard`]).
+/// `T`. Construct with [`Ref::from_raw_parts`] (typically inside a shard
+/// accessor like [`crate::ClashCollection::get_read_shard`]).
 pub struct Ref<'a, T: ?Sized> {
     _guard: RwLockReadGuardDetached<'a>,
     t: &'a T,
@@ -27,15 +27,14 @@ impl<'a, T: ?Sized> Ref<'a, T> {
     /// Bundles a detached read guard with a borrow into the data the guard
     /// protects.
     ///
-    /// The caller is asserting that `t` points inside the data protected by
-    /// `guard`. Passing an unrelated reference compiles, but breaks the
-    /// invariant that other operations (notably [`Ref::into_parts`]) rely on,
-    /// and downstream callers can then trigger undefined behaviour.
-    pub fn new(guard: RwLockReadGuardDetached<'a>, t: &'a T) -> Self {
+    /// `t` is conventionally a borrow into the data the lock held by `guard`
+    /// protects, but no operation on `Ref` relies on this — passing an
+    /// unrelated reference is sound, just confusing.
+    pub fn from_raw_parts(guard: RwLockReadGuardDetached<'a>, t: &'a T) -> Self {
         Self { _guard: guard, t }
     }
 
-    /// Splits the `Ref` into its guard and the protected reference.
+    /// Splits the `Ref` back into its raw guard and reference parts.
     ///
     /// # Safety
     ///
@@ -43,7 +42,7 @@ impl<'a, T: ?Sized> Ref<'a, T> {
     /// The caller must keep the guard live for at least as long as any use of
     /// the reference, or re-bundle the two into a new `Ref` (or another type
     /// whose `Drop` order ties them back together).
-    pub unsafe fn into_parts(self) -> (RwLockReadGuardDetached<'a>, &'a T) {
+    pub unsafe fn into_raw_parts(self) -> (RwLockReadGuardDetached<'a>, &'a T) {
         (self._guard, self.t)
     }
 
@@ -109,8 +108,8 @@ impl<T: AsRef<TDeref> + ?Sized, TDeref: ?Sized> AsRef<TDeref> for Ref<'_, T> {
 /// A write guard bundled with a mutable borrow into the data it protects.
 ///
 /// Holds an exclusive lock for as long as the `RefMut` is alive. Dereferences
-/// to `T`. Construct with [`RefMut::new`] (typically inside a shard accessor
-/// like [`crate::ClashCollection::get_write_shard`]). Use
+/// to `T`. Construct with [`RefMut::from_raw_parts`] (typically inside a
+/// shard accessor like [`crate::ClashCollection::get_write_shard`]). Use
 /// [`RefMut::downgrade`] to atomically convert into a [`Ref`] without
 /// releasing the lock in between.
 pub struct RefMut<'a, T: ?Sized> {
@@ -119,18 +118,17 @@ pub struct RefMut<'a, T: ?Sized> {
 }
 
 impl<'a, T: ?Sized> RefMut<'a, T> {
-    /// Bundles a detached write guard with a mutable borrow into the data the
-    /// guard protects.
+    /// Bundles a detached write guard with a mutable borrow into the data
+    /// the guard protects.
     ///
-    /// The caller is asserting that `t` points inside the data protected by
-    /// `guard`. Passing an unrelated reference compiles, but breaks the
-    /// invariant that other operations (notably [`RefMut::into_parts`]) rely
-    /// on, and downstream callers can then trigger undefined behaviour.
-    pub fn new(guard: RwLockWriteGuardDetached<'a>, t: &'a mut T) -> Self {
+    /// `t` is conventionally a borrow into the data the lock held by `guard`
+    /// protects, but no operation on `RefMut` relies on this — passing an
+    /// unrelated reference is sound, just confusing.
+    pub fn from_raw_parts(guard: RwLockWriteGuardDetached<'a>, t: &'a mut T) -> Self {
         Self { guard, t }
     }
 
-    /// Splits the `RefMut` into its guard and the protected reference.
+    /// Splits the `RefMut` back into its raw guard and reference parts.
     ///
     /// # Safety
     ///
@@ -138,7 +136,7 @@ impl<'a, T: ?Sized> RefMut<'a, T> {
     /// The caller must keep the guard live for at least as long as any use of
     /// the reference, or re-bundle the two into a new `RefMut` (or another type
     /// whose `Drop` order ties them back together).
-    pub unsafe fn into_parts(self) -> (RwLockWriteGuardDetached<'a>, &'a mut T) {
+    pub unsafe fn into_raw_parts(self) -> (RwLockWriteGuardDetached<'a>, &'a mut T) {
         (self.guard, self.t)
     }
 
@@ -156,11 +154,10 @@ impl<'a, T: ?Sized> RefMut<'a, T> {
     /// the corresponding [`Ref`]. No other writer can take the lock in
     /// between.
     pub fn downgrade(self) -> Ref<'a, T> {
-        Ref::new(
-            // SAFETY: `Ref` will prevent writes to the data.
-            unsafe { RwLockWriteGuardDetached::downgrade(self.guard) },
-            self.t,
-        )
+        // SAFETY: `self.t` will be demoted to `&T` once stored in the `Ref`,
+        // so it cannot alias the readers that may now observe the data.
+        let guard = unsafe { RwLockWriteGuardDetached::downgrade(self.guard) };
+        Ref::from_raw_parts(guard, self.t)
     }
 
     /// Transforms the borrow held by this `RefMut` while keeping the lock
