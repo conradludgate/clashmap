@@ -824,11 +824,15 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
         }
     }
 
-    /// Advanced entry API that tries to mimic `std::collections::HashMap`.
-    /// See the documentation on `clashmap::mapref::entry` for more details.
+    /// Advanced entry API that tries to mimic `std::collections::HashMap`,
+    /// keyed by a borrowed form of the key.
+    ///
+    /// The owned `K` is only materialised on insert into a vacant entry
+    /// (via [`ToOwned`]), so an `&str` lookup against a `ClashMap<String, _>`
+    /// doesn't allocate when the entry already exists.
     ///
     /// **Locking behaviour:** May deadlock if called when holding any sort of reference into the map.
-    pub fn entry_ref<Q>(&self, key: &Q) -> EntryRef<'_, K, V>
+    pub fn entry_ref<'a, 'b, Q>(&'a self, key: &'b Q) -> EntryRef<'a, 'b, K, Q, V>
     where
         Q: Hash + Equivalent<K> + ?Sized,
         K: Clone + Hash,
@@ -845,7 +849,7 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
                 EntryRef::Occupied(OccupiedEntry::new(entry, key))
             }
             crate::tableref::entry::Entry::Vacant(entry) => {
-                EntryRef::Vacant(VacantEntryRef::new(entry))
+                EntryRef::Vacant(VacantEntryRef::new(entry, key))
             }
         }
     }
