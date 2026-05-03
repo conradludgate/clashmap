@@ -23,11 +23,14 @@ pub struct Ref<'a, T: ?Sized> {
     t: &'a T,
 }
 
-/// Alias for [`Ref`] kept for backwards compatibility with `clashmap` 1.x,
-/// where mapped and direct refs were distinct types.
-pub type MappedRef<'a, T> = Ref<'a, T>;
-
 impl<'a, T: ?Sized> Ref<'a, T> {
+    /// Bundles a detached read guard with a borrow into the data the guard
+    /// protects.
+    ///
+    /// The caller is asserting that `t` points inside the data protected by
+    /// `guard`. Passing an unrelated reference compiles, but breaks the
+    /// invariant that other operations (notably [`Ref::into_parts`]) rely on,
+    /// and downstream callers can then trigger undefined behaviour.
     pub fn new(guard: RwLockReadGuardDetached<'a>, t: &'a T) -> Self {
         Self { _guard: guard, t }
     }
@@ -44,26 +47,30 @@ impl<'a, T: ?Sized> Ref<'a, T> {
         (self._guard, self.t)
     }
 
+    /// Returns a borrow of the protected data.
     pub fn value(&self) -> &T {
         self.t
     }
 
-    pub fn map<F, U: ?Sized>(self, f: F) -> MappedRef<'a, U>
+    /// Transforms the borrow held by this `Ref` while keeping the lock held.
+    pub fn map<F, U: ?Sized>(self, f: F) -> Ref<'a, U>
     where
         F: FnOnce(&T) -> &U,
     {
-        MappedRef {
+        Ref {
             _guard: self._guard,
             t: f(self.t),
         }
     }
 
-    pub fn try_map<F, U: ?Sized>(self, f: F) -> Result<MappedRef<'a, U>, Self>
+    /// Like [`Ref::map`], but the closure may decline by returning `None`,
+    /// in which case the original `Ref` is returned unchanged.
+    pub fn try_map<F, U: ?Sized>(self, f: F) -> Result<Ref<'a, U>, Self>
     where
         F: FnOnce(&T) -> Option<&U>,
     {
         if let Some(t) = f(self.t) {
-            Ok(MappedRef {
+            Ok(Ref {
                 _guard: self._guard,
                 t,
             })
@@ -111,11 +118,14 @@ pub struct RefMut<'a, T: ?Sized> {
     t: &'a mut T,
 }
 
-/// Alias for [`RefMut`] kept for backwards compatibility with `clashmap` 1.x,
-/// where mapped and direct refs were distinct types.
-pub type MappedRefMut<'a, T> = RefMut<'a, T>;
-
 impl<'a, T: ?Sized> RefMut<'a, T> {
+    /// Bundles a detached write guard with a mutable borrow into the data the
+    /// guard protects.
+    ///
+    /// The caller is asserting that `t` points inside the data protected by
+    /// `guard`. Passing an unrelated reference compiles, but breaks the
+    /// invariant that other operations (notably [`RefMut::into_parts`]) rely
+    /// on, and downstream callers can then trigger undefined behaviour.
     pub fn new(guard: RwLockWriteGuardDetached<'a>, t: &'a mut T) -> Self {
         Self { guard, t }
     }
@@ -132,14 +142,19 @@ impl<'a, T: ?Sized> RefMut<'a, T> {
         (self.guard, self.t)
     }
 
+    /// Returns a shared borrow of the protected data.
     pub fn value(&self) -> &T {
         self.t
     }
 
+    /// Returns a mutable borrow of the protected data.
     pub fn value_mut(&mut self) -> &mut T {
         self.t
     }
 
+    /// Atomically downgrades the held write lock to a read lock and returns
+    /// the corresponding [`Ref`]. No other writer can take the lock in
+    /// between.
     pub fn downgrade(self) -> Ref<'a, T> {
         Ref::new(
             // SAFETY: `Ref` will prevent writes to the data.
@@ -148,23 +163,27 @@ impl<'a, T: ?Sized> RefMut<'a, T> {
         )
     }
 
-    pub fn map<F, U: ?Sized>(self, f: F) -> MappedRefMut<'a, U>
+    /// Transforms the borrow held by this `RefMut` while keeping the lock
+    /// held.
+    pub fn map<F, U: ?Sized>(self, f: F) -> RefMut<'a, U>
     where
         F: FnOnce(&mut T) -> &mut U,
     {
-        MappedRefMut {
+        RefMut {
             guard: self.guard,
             t: f(self.t),
         }
     }
 
-    pub fn try_map<F, U: 'a + ?Sized>(self, f: F) -> Result<MappedRefMut<'a, U>, Self>
+    /// Like [`RefMut::map`], but the closure may decline by returning `None`,
+    /// in which case the original `RefMut` is returned unchanged.
+    pub fn try_map<F, U: 'a + ?Sized>(self, f: F) -> Result<RefMut<'a, U>, Self>
     where
         F: FnOnce(&mut T) -> Option<&mut U>,
     {
         let Self { guard, t } = self;
         match try_map(t, f) {
-            Ok(t) => Ok(MappedRefMut { guard, t }),
+            Ok(t) => Ok(RefMut { guard, t }),
             Err(t) => Err(Self { guard, t }),
         }
     }

@@ -51,3 +51,8 @@ pub mod sharded;
 mod util;
 
 pub use sharded::ClashCollection;
+
+/// Re-export of [`crossbeam_utils::CachePadded`] so consumers don't need a
+/// direct dependency on `crossbeam-utils` to use [`ClashCollection::shards`]
+/// and friends.
+pub use crossbeam_utils::CachePadded;

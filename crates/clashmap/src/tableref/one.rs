@@ -1,4 +1,12 @@
-pub use clashcore::one::{MappedRef, MappedRefMut, Ref, RefMut};
+pub use clashcore::one::{Ref, RefMut};
+
+/// Alias for [`Ref`] kept for backwards compatibility with `clashmap` 1.x,
+/// where mapped and direct refs were distinct types.
+pub type MappedRef<'a, T> = Ref<'a, T>;
+
+/// Alias for [`RefMut`] kept for backwards compatibility with `clashmap` 1.x,
+/// where mapped and direct refs were distinct types.
+pub type MappedRefMut<'a, T> = RefMut<'a, T>;
 
 #[cfg(test)]
 mod tests {

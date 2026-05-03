@@ -116,10 +116,10 @@ impl<T> ClashCollection<T> {
         ClashCollection::with_shard_amount(default_shard_amount(), init)
     }
 
-    /// Creates a new `ClashCollection` with a specified shard amount
+    /// Creates a new `ClashCollection` with the given shard amount.
     ///
-    /// shard_amount should greater than 0 and be a power of two.
-    /// If a shard_amount which is not a power of two is provided, the function will panic.
+    /// `shard_amount` must be a power of two strictly greater than 1; both
+    /// constraints are enforced by an assertion.
     pub fn with_shard_amount(shard_amount: usize, mut init: impl FnMut() -> T) -> Self {
         assert!(shard_amount > 1);
         assert!(shard_amount.is_power_of_two());
@@ -171,6 +171,8 @@ impl<T> ClashCollection<T> {
     //     self.try_fold((), |(), kv| f(kv))
     // }
 
+    /// Folds over every shard sequentially, taking each shard's read lock in
+    /// turn. Short-circuits on the first error returned by `f`.
     pub fn try_fold<R, E>(
         &self,
         mut r: R,
@@ -183,6 +185,9 @@ impl<T> ClashCollection<T> {
         Ok(r)
     }
 
+    /// Acquires the read lock for the shard `hash` belongs to and returns a
+    /// guard bundled with a borrow of the shard's data. Blocks until the
+    /// lock is available.
     pub fn get_read_shard(&self, hash: u64) -> Ref<'_, T> {
         let idx = self._determine_shard(hash as usize);
         let shard = self.shards[idx].read();
@@ -192,6 +197,9 @@ impl<T> ClashCollection<T> {
         Ref::new(guard, shard)
     }
 
+    /// Acquires the write lock for the shard `hash` belongs to and returns a
+    /// guard bundled with a mutable borrow of the shard's data. Blocks until
+    /// the lock is available.
     pub fn get_write_shard(&self, hash: u64) -> RefMut<'_, T> {
         let idx = self._determine_shard(hash as usize);
         let shard = self.shards[idx].write();
@@ -201,6 +209,8 @@ impl<T> ClashCollection<T> {
         RefMut::new(guard, shard)
     }
 
+    /// Like [`ClashCollection::get_read_shard`] but returns `None` instead of
+    /// blocking if the lock is currently held exclusively.
     pub fn try_read_shard(&self, hash: u64) -> Option<Ref<'_, T>> {
         let idx = self._determine_shard(hash as usize);
         let shard = self.shards[idx].try_read()?;
@@ -210,6 +220,8 @@ impl<T> ClashCollection<T> {
         Some(Ref::new(guard, shard))
     }
 
+    /// Like [`ClashCollection::get_write_shard`] but returns `None` instead
+    /// of blocking if the lock is currently held by anyone else.
     pub fn try_write_shard(&self, hash: u64) -> Option<RefMut<'_, T>> {
         let idx = self._determine_shard(hash as usize);
         let shard = self.shards[idx].try_write()?;
@@ -219,6 +231,9 @@ impl<T> ClashCollection<T> {
         Some(RefMut::new(guard, shard))
     }
 
+    /// Returns a mutable borrow of the shard `hash` belongs to without
+    /// taking any lock — sound only because `&mut self` proves there are no
+    /// concurrent accessors.
     pub fn get_mut(&mut self, hash: u64) -> &mut T {
         let idx = self._determine_shard(hash as usize);
         self.shards[idx].get_mut()
