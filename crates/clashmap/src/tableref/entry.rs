@@ -166,11 +166,6 @@ impl<'a, T> OccupiedEntry<'a, T> {
         let (t, _) = self.entry.remove();
         t
     }
-
-    pub fn replace_entry(self, value: T) -> T {
-        let t = mem::replace(self.entry.into_mut(), value);
-        t
-    }
 }
 
 #[cfg(test)]
