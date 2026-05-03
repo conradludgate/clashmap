@@ -29,14 +29,6 @@ impl<'a, K, V> Entry<'a, K, V> {
         }
     }
 
-    /// Into the key of the entry.
-    pub fn into_key(self) -> K {
-        match self {
-            Entry::Occupied(entry) => entry.into_key(),
-            Entry::Vacant(entry) => entry.into_key(),
-        }
-    }
-
     /// Return a mutable reference to the element if it exists,
     /// otherwise insert the default and return a mutable reference to that.
     pub fn or_default(self) -> RefMut<'a, K, V>
@@ -89,15 +81,7 @@ impl<'a, K, V> Entry<'a, K, V> {
     }
 
     /// Sets the value of the entry, and returns an OccupiedEntry.
-    ///
-    /// If you are not interested in the occupied entry,
-    /// consider [`insert`] as it doesn't need to clone the key.
-    ///
-    /// [`insert`]: Entry::insert
-    pub fn insert_entry(self, value: V) -> OccupiedEntry<'a, K, V>
-    where
-        K: Clone,
-    {
+    pub fn insert_entry(self, value: V) -> OccupiedEntry<'a, K, V> {
         match self {
             Entry::Occupied(mut entry) => {
                 entry.insert(value);
@@ -123,12 +107,8 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
     }
 
     /// Sets the value of the entry with the VacantEntry’s key, and returns an OccupiedEntry.
-    pub fn insert_entry(self, value: V) -> OccupiedEntry<'a, K, V>
-    where
-        K: Clone,
-    {
-        let entry = self.entry.insert_entry((self.key.clone(), value));
-        OccupiedEntry::new(entry, self.key)
+    pub fn insert_entry(self, value: V) -> OccupiedEntry<'a, K, V> {
+        OccupiedEntry::new(self.entry.insert_entry((self.key, value)))
     }
 
     pub fn into_key(self) -> K {
@@ -142,12 +122,11 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
 
 pub struct OccupiedEntry<'a, K, V> {
     entry: tableref::entry::OccupiedEntry<'a, (K, V)>,
-    key: K,
 }
 
 impl<'a, K, V> OccupiedEntry<'a, K, V> {
-    pub(crate) fn new(entry: tableref::entry::OccupiedEntry<'a, (K, V)>, key: K) -> Self {
-        Self { key, entry }
+    pub(crate) fn new(entry: tableref::entry::OccupiedEntry<'a, (K, V)>) -> Self {
+        Self { entry }
     }
 
     pub fn get(&self) -> &V {
@@ -166,10 +145,6 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
         self.entry.into_mut().into()
     }
 
-    pub fn into_key(self) -> K {
-        self.key
-    }
-
     pub fn key(&self) -> &K {
         &self.entry.get().0
     }
@@ -180,13 +155,6 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
 
     pub fn remove_entry(self) -> (K, V) {
         self.entry.remove()
-    }
-
-    pub fn replace_entry(self, value: V) -> (K, V) {
-        // SAFETY: `_guard` is bound for the remainder of the function, so it
-        // outlives every use of `t`.
-        let (_guard, t) = unsafe { self.entry.into_mut().into_raw_parts() };
-        mem::replace(t, (self.key, value))
     }
 }
 

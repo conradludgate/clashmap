@@ -794,7 +794,7 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
             .entry_mut(hash, |(k, _v)| k == &key, |(k, _v)| self.hasher.hash_one(k))
         {
             crate::tableref::entrymut::EntryMut::Occupied(occupied_entry_mut) => {
-                EntryMut::Occupied(OccupiedEntryMut::new(key, occupied_entry_mut.entry))
+                EntryMut::Occupied(OccupiedEntryMut::new(occupied_entry_mut.entry))
             }
             crate::tableref::entrymut::EntryMut::Vacant(vacant_entry_mut) => {
                 EntryMut::Vacant(VacantEntryMut::new(key, vacant_entry_mut.entry))
@@ -816,7 +816,7 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
             .entry(hash, |(k, _v)| k == &key, |(k, _v)| self.hasher.hash_one(k))
         {
             crate::tableref::entry::Entry::Occupied(entry) => {
-                Entry::Occupied(OccupiedEntry::new(entry, key))
+                Entry::Occupied(OccupiedEntry::new(entry))
             }
             crate::tableref::entry::Entry::Vacant(entry) => {
                 Entry::Vacant(VacantEntry::new(entry, key))
@@ -835,7 +835,7 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
     pub fn entry_ref<'a, 'b, Q>(&'a self, key: &'b Q) -> EntryRef<'a, 'b, K, Q, V>
     where
         Q: Hash + Equivalent<K> + ?Sized,
-        K: Clone + Hash,
+        K: Hash,
     {
         let hash = self.hash_u64(&key);
 
@@ -845,8 +845,7 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
             |(k, _v)| self.hasher.hash_one(k),
         ) {
             crate::tableref::entry::Entry::Occupied(entry) => {
-                let key = entry.get().0.clone();
-                EntryRef::Occupied(OccupiedEntry::new(entry, key))
+                EntryRef::Occupied(OccupiedEntry::new(entry))
             }
             crate::tableref::entry::Entry::Vacant(entry) => {
                 EntryRef::Vacant(VacantEntryRef::new(entry, key))
@@ -868,7 +867,7 @@ impl<K, V, S: BuildHasher> ClashMap<K, V, S> {
             .try_entry(hash, |(k, _v)| k == &key, |(k, _v)| self.hasher.hash_one(k))?
         {
             crate::tableref::entry::Entry::Occupied(occupied_entry) => {
-                Some(Entry::Occupied(OccupiedEntry::new(occupied_entry, key)))
+                Some(Entry::Occupied(OccupiedEntry::new(occupied_entry)))
             }
             crate::tableref::entry::Entry::Vacant(vacant_entry) => {
                 Some(Entry::Vacant(VacantEntry::new(vacant_entry, key)))

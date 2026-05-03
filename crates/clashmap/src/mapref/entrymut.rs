@@ -30,14 +30,6 @@ impl<'a, K: Eq + Hash, V> EntryMut<'a, K, V> {
         }
     }
 
-    /// Into the key of the entry.
-    pub fn into_key(self) -> K {
-        match self {
-            EntryMut::Occupied(entry) => entry.into_key(),
-            EntryMut::Vacant(entry) => entry.into_key(),
-        }
-    }
-
     /// Return a mutable reference to the element if it exists,
     /// otherwise insert the default and return a mutable reference to that.
     pub fn or_default(self) -> &'a mut (K, V)
@@ -90,15 +82,7 @@ impl<'a, K: Eq + Hash, V> EntryMut<'a, K, V> {
     }
 
     /// Sets the value of the entry, and returns an OccupiedEntry.
-    ///
-    /// If you are not interested in the occupied entry,
-    /// consider [`insert`] as it doesn't need to clone the key.
-    ///
-    /// [`insert`]: EntryMut::insert
-    pub fn insert_entry(self, value: V) -> OccupiedEntryMut<'a, K, V>
-    where
-        K: Clone,
-    {
+    pub fn insert_entry(self, value: V) -> OccupiedEntryMut<'a, K, V> {
         match self {
             EntryMut::Occupied(mut entry) => {
                 entry.insert(value);
@@ -125,13 +109,9 @@ impl<'a, K: Eq + Hash, V> VacantEntryMut<'a, K, V> {
     }
 
     /// Sets the value of the entry with the VacantEntry’s key, and returns an OccupiedEntry.
-    pub fn insert_entry(self, value: V) -> OccupiedEntryMut<'a, K, V>
-    where
-        K: Clone,
-    {
-        let entry = self.entry.insert((self.key.clone(), value));
-
-        OccupiedEntryMut::new(self.key, entry)
+    pub fn insert_entry(self, value: V) -> OccupiedEntryMut<'a, K, V> {
+        let entry = self.entry.insert((self.key, value));
+        OccupiedEntryMut::new(entry)
     }
 
     pub fn into_key(self) -> K {
@@ -145,12 +125,11 @@ impl<'a, K: Eq + Hash, V> VacantEntryMut<'a, K, V> {
 
 pub struct OccupiedEntryMut<'a, K, V> {
     entry: hash_table::OccupiedEntry<'a, (K, V)>,
-    key: K,
 }
 
 impl<'a, K: Eq + Hash, V> OccupiedEntryMut<'a, K, V> {
-    pub(crate) fn new(key: K, entry: hash_table::OccupiedEntry<'a, (K, V)>) -> Self {
-        Self { key, entry }
+    pub(crate) fn new(entry: hash_table::OccupiedEntry<'a, (K, V)>) -> Self {
+        Self { entry }
     }
 
     pub fn get(&self) -> &V {
@@ -169,10 +148,6 @@ impl<'a, K: Eq + Hash, V> OccupiedEntryMut<'a, K, V> {
         self.entry.into_mut()
     }
 
-    pub fn into_key(self) -> K {
-        self.key
-    }
-
     pub fn key(&self) -> &K {
         &self.entry.get().0
     }
@@ -184,11 +159,6 @@ impl<'a, K: Eq + Hash, V> OccupiedEntryMut<'a, K, V> {
 
     pub fn remove_entry(self) -> (K, V) {
         let ((k, v), _) = self.entry.remove();
-        (k, v)
-    }
-
-    pub fn replace_entry(self, value: V) -> (K, V) {
-        let (k, v) = mem::replace(self.entry.into_mut(), (self.key, value));
         (k, v)
     }
 }
