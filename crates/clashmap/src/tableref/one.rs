@@ -11,14 +11,12 @@ pub type MappedRefMut<'a, T> = RefMut<'a, T>;
 #[cfg(test)]
 mod tests {
     use std::collections::hash_map::RandomState;
-    use std::hash::{BuildHasher, Hash, Hasher};
+    use std::hash::{BuildHasher, Hash};
 
     use crate::ClashTable;
 
     fn hash_one(s: &impl BuildHasher, h: impl Hash) -> u64 {
-        let mut s = s.build_hasher();
-        h.hash(&mut s);
-        s.finish()
+        s.hash_one(&h)
     }
 
     #[test]
