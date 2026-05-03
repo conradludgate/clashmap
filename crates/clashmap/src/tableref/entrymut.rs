@@ -1,7 +1,5 @@
 use hashbrown::hash_table;
 
-use core::mem;
-
 pub enum EntryMut<'a, T> {
     Occupied(OccupiedEntryMut<'a, T>),
     Vacant(VacantEntryMut<'a, T>),
@@ -65,7 +63,7 @@ impl<'a, T> EntryMut<'a, T> {
     pub fn insert(self, value: T) -> &'a mut T {
         match self {
             EntryMut::Occupied(mut entry) => {
-                entry.insert(value);
+                *entry.get_mut() = value;
                 entry.into_mut()
             }
             EntryMut::Vacant(entry) => entry.insert(value),
@@ -73,15 +71,10 @@ impl<'a, T> EntryMut<'a, T> {
     }
 
     /// Sets the value of the entry, and returns an OccupiedEntry.
-    ///
-    /// If you are not interested in the occupied entry,
-    /// consider [`insert`] as it doesn't need to clone the key.
-    ///
-    /// [`insert`]: EntryMut::insert
     pub fn insert_entry(self, value: T) -> OccupiedEntryMut<'a, T> {
         match self {
             EntryMut::Occupied(mut entry) => {
-                entry.insert(value);
+                *entry.get_mut() = value;
                 entry
             }
             EntryMut::Vacant(entry) => entry.insert_entry(value),
@@ -125,10 +118,6 @@ impl<'a, T> OccupiedEntryMut<'a, T> {
 
     pub fn get_mut(&mut self) -> &mut T {
         self.entry.get_mut()
-    }
-
-    pub fn insert(&mut self, value: T) -> T {
-        mem::replace(self.get_mut(), value)
     }
 
     pub fn into_mut(self) -> &'a mut T {
