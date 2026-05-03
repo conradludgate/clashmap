@@ -4,6 +4,12 @@ use std::{marker::PhantomData, mem::ManuallyDrop};
 
 use lock_api::{RawRwLock, RawRwLockDowngrade, RwLockReadGuard, RwLockWriteGuard};
 
+/// Returns `f(&mut *t)` if it yields `Some`, otherwise returns `t` unchanged.
+///
+/// Equivalent in spirit to `Result::map_err`, but for borrowed data: it lets
+/// the caller try to narrow a `&mut T` into a `&mut U` and recover the
+/// original borrow if narrowing fails. Implemented with `polonius-the-crab`
+/// because the standard borrow checker rejects the natural pattern.
 pub(crate) fn try_map<F, T: ?Sized, U: ?Sized>(mut t: &mut T, f: F) -> Result<&mut U, &mut T>
 where
     F: FnOnce(&mut T) -> Option<&mut U>,
@@ -17,7 +23,15 @@ where
     Err(t)
 }
 
-/// A [`RwLockReadGuard`], without the data
+/// A [`RwLockReadGuard`] split apart from the protected data.
+///
+/// Holds the shared (read) lock until dropped, but does not carry a reference
+/// to the locked data. This lets callers bundle the guard alongside an
+/// arbitrary view derived from the locked data (e.g. a slice, a struct field)
+/// while still releasing the lock when the bundle is dropped.
+///
+/// Pair with the data via [`RwLockReadGuardDetached::detach_from`]; the
+/// returned reference must not outlive the guard.
 pub(crate) struct RwLockReadGuardDetached<'a, R: RawRwLock> {
     lock: &'a R,
     _marker: PhantomData<R::GuardMarker>,
@@ -32,7 +46,15 @@ impl<R: RawRwLock> Drop for RwLockReadGuardDetached<'_, R> {
     }
 }
 
-/// A [`RwLockWriteGuard`], without the data
+/// A [`RwLockWriteGuard`] split apart from the protected data.
+///
+/// Holds the exclusive (write) lock until dropped, but does not carry a
+/// reference to the locked data. This lets callers bundle the guard alongside
+/// an arbitrary view derived from the locked data (e.g. a slice, a struct
+/// field) while still releasing the lock when the bundle is dropped.
+///
+/// Pair with the data via [`RwLockWriteGuardDetached::detach_from`]; the
+/// returned reference must not outlive the guard.
 pub(crate) struct RwLockWriteGuardDetached<'a, R: RawRwLock> {
     lock: &'a R,
     _marker: PhantomData<R::GuardMarker>,
@@ -48,11 +70,18 @@ impl<R: RawRwLock> Drop for RwLockWriteGuardDetached<'_, R> {
 }
 
 impl<'a, R: RawRwLock> RwLockReadGuardDetached<'a, R> {
-    /// Separates the data from the [`RwLockReadGuard`]
+    /// Splits a [`RwLockReadGuard`] into a detached guard and a raw reference
+    /// to the protected data.
+    ///
+    /// The shared lock continues to be held by the returned guard; dropping
+    /// the guard releases the lock.
     ///
     /// # Safety
     ///
-    /// The data must not outlive the detached guard
+    /// The returned `&'a T` must not be used after the returned guard is
+    /// dropped. In particular, the caller must not `mem::forget` the guard or
+    /// move it to a scope shorter than any borrow derived from the returned
+    /// reference. Misuse causes a use-after-unlock and is undefined behaviour.
     pub(crate) unsafe fn detach_from<T>(guard: RwLockReadGuard<'a, R, T>) -> (Self, &'a T) {
         let rwlock = RwLockReadGuard::rwlock(&ManuallyDrop::new(guard));
 
@@ -70,11 +99,18 @@ impl<'a, R: RawRwLock> RwLockReadGuardDetached<'a, R> {
 }
 
 impl<'a, R: RawRwLock> RwLockWriteGuardDetached<'a, R> {
-    /// Separates the data from the [`RwLockWriteGuard`]
+    /// Splits a [`RwLockWriteGuard`] into a detached guard and a raw mutable
+    /// reference to the protected data.
+    ///
+    /// The exclusive lock continues to be held by the returned guard; dropping
+    /// the guard releases the lock.
     ///
     /// # Safety
     ///
-    /// The data must not outlive the detached guard
+    /// The returned `&'a mut T` must not be used after the returned guard is
+    /// dropped. In particular, the caller must not `mem::forget` the guard or
+    /// move it to a scope shorter than any borrow derived from the returned
+    /// reference. Misuse causes a use-after-unlock and is undefined behaviour.
     pub(crate) unsafe fn detach_from<T>(guard: RwLockWriteGuard<'a, R, T>) -> (Self, &'a mut T) {
         let rwlock = RwLockWriteGuard::rwlock(&ManuallyDrop::new(guard));
 
@@ -92,9 +128,17 @@ impl<'a, R: RawRwLock> RwLockWriteGuardDetached<'a, R> {
 }
 
 impl<'a, R: RawRwLockDowngrade> RwLockWriteGuardDetached<'a, R> {
+    /// Atomically downgrades the exclusive lock held by this guard into a
+    /// shared lock.
+    ///
     /// # Safety
     ///
-    /// The associated data must not mut mutated after downgrading
+    /// Any `&mut T` that was obtained alongside this write guard (typically
+    /// via [`RwLockWriteGuardDetached::detach_from`]) must not be used after
+    /// downgrading: once the lock is shared, other readers may observe the
+    /// data, so further mutation through the existing `&mut T` would alias
+    /// those readers and is undefined behaviour. Convert any retained
+    /// reference to an `&T` (or drop it) before calling this method.
     pub(crate) unsafe fn downgrade(self) -> RwLockReadGuardDetached<'a, R> {
         // Do not drop the write guard - otherwise we will trigger a downgrade + unlock_exclusive,
         // which is incorrect
