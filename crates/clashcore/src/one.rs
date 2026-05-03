@@ -1,14 +1,30 @@
+//! Single-entry guard bundles.
+//!
+//! [`Ref`] and [`RefMut`] each pair a detached lock guard with a borrow of
+//! the data the guard protects. Dropping the bundle releases the lock, which
+//! makes the bundle usable as a `Deref`-able handle to a single entry inside
+//! a [`crate::ClashCollection`] shard.
+//!
+//! These types are exclusive to one acquirer; for the iterator-friendly
+//! `Arc`-shared variants, see [`crate::multiple`].
+
 use crate::lock::{RwLockReadGuardDetached, RwLockWriteGuardDetached};
 use crate::util::try_map;
 use core::ops::{Deref, DerefMut};
 use std::fmt::{Debug, Formatter};
 
+/// A read guard bundled with a borrow into the data it protects.
+///
+/// Holds a shared lock for as long as the `Ref` is alive. Dereferences to
+/// `T`. Construct with [`Ref::new`] (typically inside a shard accessor like
+/// [`crate::ClashCollection::get_read_shard`]).
 pub struct Ref<'a, T: ?Sized> {
     _guard: RwLockReadGuardDetached<'a>,
     t: &'a T,
 }
 
-/// Kept for backwards compatiblity.
+/// Alias for [`Ref`] kept for backwards compatibility with `clashmap` 1.x,
+/// where mapped and direct refs were distinct types.
 pub type MappedRef<'a, T> = Ref<'a, T>;
 
 impl<'a, T: ?Sized> Ref<'a, T> {
@@ -83,12 +99,20 @@ impl<T: AsRef<TDeref> + ?Sized, TDeref: ?Sized> AsRef<TDeref> for Ref<'_, T> {
     }
 }
 
+/// A write guard bundled with a mutable borrow into the data it protects.
+///
+/// Holds an exclusive lock for as long as the `RefMut` is alive. Dereferences
+/// to `T`. Construct with [`RefMut::new`] (typically inside a shard accessor
+/// like [`crate::ClashCollection::get_write_shard`]). Use
+/// [`RefMut::downgrade`] to atomically convert into a [`Ref`] without
+/// releasing the lock in between.
 pub struct RefMut<'a, T: ?Sized> {
     guard: RwLockWriteGuardDetached<'a>,
     t: &'a mut T,
 }
 
-/// Kept for backwards compatiblity.
+/// Alias for [`RefMut`] kept for backwards compatibility with `clashmap` 1.x,
+/// where mapped and direct refs were distinct types.
 pub type MappedRefMut<'a, T> = RefMut<'a, T>;
 
 impl<'a, T: ?Sized> RefMut<'a, T> {

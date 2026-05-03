@@ -1,10 +1,25 @@
+//! Sharded `RwLock` container.
+//!
+//! [`ClashCollection`] is an array of cache-padded [`RwLock`]s addressed by
+//! hash. It is the foundation of `clashmap`'s concurrency: each shard can be
+//! locked independently, so unrelated keys rarely contend.
+//!
+//! The number of shards is fixed at construction time and is always a power
+//! of two; the high bits of the hash select the shard, leaving the low bits
+//! for the inner data structure (typically a `hashbrown` table). Use
+//! [`default_shard_amount`] to pick a sensible default based on the host's
+//! parallelism, or pass an explicit power of two to
+//! [`ClashCollection::with_shard_amount`].
+
 use crate::lock::{RwLock, RwLockReadGuardDetached, RwLockWriteGuardDetached};
 use crate::one::{Ref, RefMut};
 use crossbeam_utils::CachePadded;
 use std::sync::OnceLock;
 
-/// Returns the default shard count: the next power of two above
-/// `4 * available_parallelism()`. Cached after the first call.
+/// Returns the default shard count: the next power of two at or above
+/// `4 * available_parallelism()`.
+///
+/// Cached after the first call.
 pub fn default_shard_amount() -> usize {
     static DEFAULT_SHARD_AMOUNT: OnceLock<usize> = OnceLock::new();
     *DEFAULT_SHARD_AMOUNT.get_or_init(|| {
@@ -12,10 +27,26 @@ pub fn default_shard_amount() -> usize {
     })
 }
 
-/// An implementation detail of `clashmap`'s `ClashTable`, exposed for convenience.
+/// A fixed-size array of cache-padded [`RwLock`]s, addressed by hash.
 ///
-/// This implements the core sharded data structure that allows for efficient
-/// concurrency in `clashmap`.
+/// `ClashCollection` is the sharded primitive that powers `clashmap`'s
+/// `ClashTable` / `ClashMap` / `ClashSet`. It is generic over the per-shard
+/// payload `T`, so the same locking strategy can back a sharded hashtable, a
+/// sharded vector, or any other inner data structure.
+///
+/// # Sharding scheme
+///
+/// The shard count is always a power of two. Given a hash `h`, the shard
+/// index is `(h << 7) >> shift`, where `shift = usize::BITS -
+/// log2(shard_amount)`. Shifting left by 7 first leaves the high 7 bits of
+/// the hash undisturbed, which lets the inner `hashbrown` table re-use them
+/// for its SIMD tag without colliding with the shard selection bits.
+///
+/// # Locking
+///
+/// Each shard is independent. Acquiring a shard returns a [`Ref`] or
+/// [`RefMut`] that bundles the lock guard with a borrow of the protected
+/// data; dropping it releases the lock.
 pub struct ClashCollection<T> {
     shift: usize,
     shards: Box<[CachePadded<RwLock<T>>]>,
