@@ -85,7 +85,7 @@ impl<'a, T: 'a> Iterator for Iter<'a, T> {
             if let Some(current) = self.current.as_mut() {
                 if let Some(t) = current.1.next() {
                     let guard = current.0.clone();
-                    return Some(RefMulti::new(guard, t));
+                    return Some(RefMulti::from_raw_parts(guard, t));
                 }
             }
 
@@ -122,7 +122,7 @@ impl<'a, T: 'a> Iterator for IterMut<'a, T> {
             if let Some(current) = self.current.as_mut() {
                 if let Some(t) = current.1.next() {
                     let guard = current.0.clone();
-                    return Some(RefMutMulti::new(guard, t));
+                    return Some(RefMutMulti::from_raw_parts(guard, t));
                 }
             }
 

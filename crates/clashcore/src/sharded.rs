@@ -192,9 +192,10 @@ impl<T> ClashCollection<T> {
         let idx = self._determine_shard(hash as usize);
         let shard = self.shards[idx].read();
 
-        // SAFETY: The data will not outlive the guard, since we pass the guard to `Ref`.
+        // SAFETY: the data is re-bundled with the guard inside the returned
+        // `Ref`, so the borrow cannot outlive the lock.
         let (guard, shard) = unsafe { RwLockReadGuardDetached::detach_from(shard) };
-        Ref::new(guard, shard)
+        Ref::from_raw_parts(guard, shard)
     }
 
     /// Acquires the write lock for the shard `hash` belongs to and returns a
@@ -204,9 +205,10 @@ impl<T> ClashCollection<T> {
         let idx = self._determine_shard(hash as usize);
         let shard = self.shards[idx].write();
 
-        // SAFETY: The data will not outlive the guard, since we pass the guard to `Ref`.
+        // SAFETY: the data is re-bundled with the guard inside the returned
+        // `RefMut`, so the borrow cannot outlive the lock.
         let (guard, shard) = unsafe { RwLockWriteGuardDetached::detach_from(shard) };
-        RefMut::new(guard, shard)
+        RefMut::from_raw_parts(guard, shard)
     }
 
     /// Like [`ClashCollection::get_read_shard`] but returns `None` instead of
@@ -215,9 +217,10 @@ impl<T> ClashCollection<T> {
         let idx = self._determine_shard(hash as usize);
         let shard = self.shards[idx].try_read()?;
 
-        // SAFETY: The data will not outlive the guard, since we pass the guard to `Ref`.
+        // SAFETY: the data is re-bundled with the guard inside the returned
+        // `Ref`, so the borrow cannot outlive the lock.
         let (guard, shard) = unsafe { RwLockReadGuardDetached::detach_from(shard) };
-        Some(Ref::new(guard, shard))
+        Some(Ref::from_raw_parts(guard, shard))
     }
 
     /// Like [`ClashCollection::get_write_shard`] but returns `None` instead
@@ -226,9 +229,10 @@ impl<T> ClashCollection<T> {
         let idx = self._determine_shard(hash as usize);
         let shard = self.shards[idx].try_write()?;
 
-        // SAFETY: The data will not outlive the guard, since we pass the guard to `Ref`.
+        // SAFETY: the data is re-bundled with the guard inside the returned
+        // `RefMut`, so the borrow cannot outlive the lock.
         let (guard, shard) = unsafe { RwLockWriteGuardDetached::detach_from(shard) };
-        Some(RefMut::new(guard, shard))
+        Some(RefMut::from_raw_parts(guard, shard))
     }
 
     /// Returns a mutable borrow of the shard `hash` belongs to without
