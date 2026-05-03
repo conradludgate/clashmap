@@ -1,4 +1,4 @@
-#![doc = include_str!("../../../README.md")]
+#![doc = include_str!("../README.md")]
 #![warn(
     unsafe_op_in_unsafe_fn,
     clippy::missing_safety_doc,
