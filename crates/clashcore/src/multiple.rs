@@ -35,6 +35,12 @@ impl<T> Clone for RefMulti<'_, T> {
 }
 
 impl<'a, T> RefMulti<'a, T> {
+    /// Bundles an `Arc`-shared detached read guard with a borrow into the
+    /// data the guard protects.
+    ///
+    /// The caller is asserting that `v` points inside the data protected by
+    /// `guard`. Passing an unrelated reference compiles, but breaks the
+    /// type's invariant.
     pub fn new(guard: Arc<RwLockReadGuardDetached<'a>>, v: &'a T) -> Self {
         Self {
             _guard: guard,
@@ -42,6 +48,7 @@ impl<'a, T> RefMulti<'a, T> {
         }
     }
 
+    /// Returns a borrow of the protected data.
     pub fn value(&self) -> &T {
         self.t
     }
@@ -67,14 +74,23 @@ pub struct RefMutMulti<'a, T> {
 }
 
 impl<'a, T> RefMutMulti<'a, T> {
+    /// Bundles an `Arc`-shared detached write guard with a mutable borrow
+    /// into the data the guard protects.
+    ///
+    /// The caller is asserting that `t` points inside the data protected by
+    /// `guard`, and that no other `RefMutMulti` sharing the same guard
+    /// aliases this borrow. Disjointness is the iterator's responsibility,
+    /// not the type's.
     pub fn new(guard: Arc<RwLockWriteGuardDetached<'a>>, t: &'a mut T) -> Self {
         Self { _guard: guard, t }
     }
 
+    /// Returns a shared borrow of the protected data.
     pub fn value(&self) -> &T {
         self.t
     }
 
+    /// Returns a mutable borrow of the protected data.
     pub fn value_mut(&mut self) -> &mut T {
         self.t
     }
