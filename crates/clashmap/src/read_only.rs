@@ -39,16 +39,17 @@ impl<K: Eq + Hash + fmt::Debug, V: fmt::Debug, S: BuildHasher> fmt::Debug
 
 impl<K, V, S> ReadOnlyView<K, V, S> {
     pub(crate) fn new(map: ClashMap<K, V, S>) -> Self {
-        let shift = map.table.tables.shift();
+        let shards: Box<[HashMap<K, V>]> = map
+            .table
+            .tables
+            .into_shards()
+            .into_vec()
+            .into_iter()
+            .map(|s| s.into_inner().into_inner())
+            .collect();
+        let shift = (usize::BITS - shards.len().trailing_zeros()) as usize;
         Self {
-            shards: map
-                .table
-                .tables
-                .into_shards()
-                .into_vec()
-                .into_iter()
-                .map(|s| s.into_inner().into_inner())
-                .collect(),
+            shards,
             shift,
             hasher: map.hasher,
         }
@@ -64,7 +65,7 @@ impl<K, V, S> ReadOnlyView<K, V, S> {
             .collect();
         ClashMap {
             table: ClashTable {
-                tables: ClashCollection::from_parts(self.shift, shards),
+                tables: ClashCollection::from_shards(shards),
             },
             hasher: self.hasher,
         }

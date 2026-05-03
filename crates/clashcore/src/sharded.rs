@@ -87,20 +87,21 @@ impl<T> ClashCollection<T> {
     }
 
     /// Consumes this `ClashCollection` and returns the inner shards.
+    ///
+    /// Pair with [`ClashCollection::from_shards`] to round-trip.
     pub fn into_shards(self) -> Box<[CachePadded<RwLock<T>>]> {
         self.shards
     }
 
-    /// Returns the bit shift used to map a hash to a shard index.
-    pub fn shift(&self) -> usize {
-        self.shift
-    }
-
-    /// Reconstructs a `ClashCollection` from its raw parts.
+    /// Reconstructs a `ClashCollection` from a previously extracted shard
+    /// box (typically produced by [`ClashCollection::into_shards`]).
     ///
-    /// `shift` must equal `usize::BITS - shards.len().trailing_zeros()` and
-    /// `shards.len()` must be a non-zero power of two.
-    pub fn from_parts(shift: usize, shards: Box<[CachePadded<RwLock<T>>]>) -> Self {
+    /// Panics if `shards.len()` is not a power of two strictly greater
+    /// than 1.
+    pub fn from_shards(shards: Box<[CachePadded<RwLock<T>>]>) -> Self {
+        assert!(shards.len() > 1);
+        assert!(shards.len().is_power_of_two());
+        let shift = (usize::BITS - shards.len().trailing_zeros()) as usize;
         Self { shift, shards }
     }
 
