@@ -1,13 +1,21 @@
-use crate::default_shard_amount;
 use crate::lock::{RwLock, RwLockReadGuardDetached, RwLockWriteGuardDetached};
-use crate::tableref::one::{Ref, RefMut};
+use crate::one::{Ref, RefMut};
 use crossbeam_utils::CachePadded;
+use std::sync::OnceLock;
 
-/// An implementation detail of [`ClashTable`](crate::ClashTable), exposed for convenience.
+/// Returns the default shard count: the next power of two above
+/// `4 * available_parallelism()`. Cached after the first call.
+pub fn default_shard_amount() -> usize {
+    static DEFAULT_SHARD_AMOUNT: OnceLock<usize> = OnceLock::new();
+    *DEFAULT_SHARD_AMOUNT.get_or_init(|| {
+        (std::thread::available_parallelism().map_or(1, usize::from) * 4).next_power_of_two()
+    })
+}
+
+/// An implementation detail of `clashmap`'s `ClashTable`, exposed for convenience.
 ///
-/// This implements the core sharded data structure that allows for efficient concurrency in ClashMap.
-///
-/// Requires the `raw-api` feature to be enabled.
+/// This implements the core sharded data structure that allows for efficient
+/// concurrency in `clashmap`.
 pub struct ClashCollection<T> {
     shift: usize,
     shards: Box<[CachePadded<RwLock<T>>]>,
@@ -53,7 +61,7 @@ impl<T> ClashCollection<T> {
     }
 
     /// Returns the bit shift used to map a hash to a shard index.
-    pub(crate) fn shift(&self) -> usize {
+    pub fn shift(&self) -> usize {
         self.shift
     }
 
@@ -61,7 +69,7 @@ impl<T> ClashCollection<T> {
     ///
     /// `shift` must equal `usize::BITS - shards.len().trailing_zeros()` and
     /// `shards.len()` must be a non-zero power of two.
-    pub(crate) fn from_parts(shift: usize, shards: Box<[CachePadded<RwLock<T>>]>) -> Self {
+    pub fn from_parts(shift: usize, shards: Box<[CachePadded<RwLock<T>>]>) -> Self {
         Self { shift, shards }
     }
 
@@ -132,7 +140,7 @@ impl<T> ClashCollection<T> {
     //     self.try_fold((), |(), kv| f(kv))
     // }
 
-    pub(crate) fn try_fold<R, E>(
+    pub fn try_fold<R, E>(
         &self,
         mut r: R,
         mut f: impl FnMut(R, &T) -> Result<R, E>,

@@ -1,6 +1,6 @@
-use crate::lock::{RwLock, RwLockReadGuardDetached, RwLockWriteGuardDetached};
 use crate::mapref::multiple::{RefMulti, RefMutMulti};
 use crate::{tableref, ClashMap, HashMap, Shard};
+use clashcore::lock::{RwLock, RwLockReadGuardDetached, RwLockWriteGuardDetached};
 use core::hash::{BuildHasher, Hash};
 use crossbeam_utils::CachePadded;
 use rayon::iter::plumbing::UnindexedConsumer;

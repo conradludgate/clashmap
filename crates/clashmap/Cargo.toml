@@ -1,6 +1,6 @@
 [package]
 name = "clashmap"
-version = "1.2.1"
+version = "1.3.0"
 authors = ["Conrad Ludgate <conradludgate@gmail.com>", "Joel Wejdenstål <jwejdenstal@icloud.com>"]
 edition = "2021"
 rust-version = "1.70"
@@ -21,11 +21,10 @@ inline = ["hashbrown/inline-more"]
 
 rayon = ["dep:rayon"]
 serde = ["dep:serde"]
-typesize = ["dep:typesize"]
+typesize = ["dep:typesize", "clashcore/typesize"]
 
 [dependencies]
-lock_api = "0.4.10"
-parking_lot_core = "0.9.10"
+clashcore = { version = "1.0.0", path = "../clashcore" }
 hashbrown = { version = "0.15.0", default-features = false }
 crossbeam-utils = "0.8"
 replace_with = "0.1.7"

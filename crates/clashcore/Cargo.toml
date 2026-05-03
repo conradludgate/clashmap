@@ -1,0 +1,24 @@
+[package]
+name = "clashcore"
+version = "1.0.0"
+authors = ["Conrad Ludgate <conradludgate@gmail.com>", "Joel Wejdenstål <jwejdenstal@icloud.com>"]
+edition = "2021"
+rust-version = "1.70"
+license = "MIT"
+repository = "https://github.com/conradludgate/clashmap"
+homepage = "https://github.com/conradludgate/clashmap"
+description = "Sharded RwLock collection — internals shared by clashmap"
+keywords = ["atomic", "concurrent", "sharded"]
+categories = ["concurrency", "data-structures"]
+
+[features]
+default = []
+typesize = ["dep:typesize"]
+
+[dependencies]
+lock_api = "0.4.10"
+parking_lot_core = "0.9.10"
+crossbeam-utils = "0.8"
+polonius-the-crab = "0.5.0"
+
+typesize = { version = "0.1.8", default-features = false, optional = true }
