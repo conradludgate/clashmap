@@ -23,7 +23,7 @@ If you have any suggestions or tips do not hesitate to open an issue or a PR.
 
 [![downloads](https://img.shields.io/crates/d/clashmap)](https://crates.io/crates/clashmap)
 
-[![minimum rustc version](https://img.shields.io/badge/rustc-1.70-orange.svg)](https://crates.io/crates/clashmap)
+[![minimum rustc version](https://img.shields.io/badge/rustc-1.85-orange.svg)](https://crates.io/crates/clashmap)
 
 ## Cargo features
 
