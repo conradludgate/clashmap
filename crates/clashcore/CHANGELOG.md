@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1](https://github.com/conradludgate/clashmap/compare/clashcore-v1.0.0...clashcore-v1.0.1) - 2026-10-31
+
+### Other
+
+- *(clashcore)* make detached guard transitions explicit
+
 ## [1.0.0](https://github.com/conradludgate/clashmap/releases/tag/clashcore-v1.0.0) - 2026-05-03
 
 ### Added

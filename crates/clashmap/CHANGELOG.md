@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1](https://github.com/conradludgate/clashmap/compare/clashmap-v1.3.0...clashmap-v1.3.1) - 2026-10-31
+
+### Other
+
+- updated the following local packages: clashcore
+
 ## [1.3.0](https://github.com/conradludgate/clashmap/compare/clashmap-v1.2.1...clashmap-v1.3.0) - 2026-05-03
 
 ### Added
