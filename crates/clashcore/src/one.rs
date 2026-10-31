@@ -154,10 +154,13 @@ impl<'a, T: ?Sized> RefMut<'a, T> {
     /// the corresponding [`Ref`]. No other writer can take the lock in
     /// between.
     pub fn downgrade(self) -> Ref<'a, T> {
-        // SAFETY: `self.t` will be demoted to `&T` once stored in the `Ref`,
-        // so it cannot alias the readers that may now observe the data.
+        // End the exclusive view before the lock permits concurrent readers.
+        let t: &'a T = self.t;
+        // SAFETY: `t` is already a shared reborrow and the old mutable reference
+        // is no longer used. The returned read guard continues to protect `t`,
+        // and Ref ties subsequent accesses to a borrow of that guard bundle.
         let guard = unsafe { RwLockWriteGuardDetached::downgrade(self.guard) };
-        Ref::from_raw_parts(guard, self.t)
+        Ref::from_raw_parts(guard, t)
     }
 
     /// Transforms the borrow held by this `RefMut` while keeping the lock

@@ -24,16 +24,19 @@ where
 /// arbitrary view derived from the locked data (e.g. a slice, a struct field)
 /// while still releasing the lock when the bundle is dropped.
 ///
-/// Pair with the data via [`RwLockReadGuardDetached::detach_from`]; the
-/// returned reference must not outlive the guard.
+/// Pair with the data via [`RwLockReadGuardDetached::detach_from`]; accesses
+/// through the returned reference must remain protected by the shared lock.
 pub struct RwLockReadGuardDetached<'a, R: RawRwLock> {
+    // Safety invariant: this guard owns one held shared acquisition of `lock`.
+    // No other owner may release that acquisition while this guard exists.
     lock: &'a R,
     _marker: PhantomData<R::GuardMarker>,
 }
 
 impl<R: RawRwLock> Drop for RwLockReadGuardDetached<'_, R> {
     fn drop(&mut self) {
-        // Safety: An RwLockReadGuardDetached always holds a shared lock.
+        // SAFETY: The lock field invariant provides one held shared acquisition
+        // owned by this guard. Drop consumes its sole unlock obligation.
         unsafe {
             self.lock.unlock_shared();
         }
@@ -47,16 +50,19 @@ impl<R: RawRwLock> Drop for RwLockReadGuardDetached<'_, R> {
 /// an arbitrary view derived from the locked data (e.g. a slice, a struct
 /// field) while still releasing the lock when the bundle is dropped.
 ///
-/// Pair with the data via [`RwLockWriteGuardDetached::detach_from`]; the
-/// returned reference must not outlive the guard.
+/// Pair with the data via [`RwLockWriteGuardDetached::detach_from`]; accesses
+/// through the returned reference must remain protected by the exclusive lock.
 pub struct RwLockWriteGuardDetached<'a, R: RawRwLock> {
+    // Safety invariant: this guard owns the held exclusive acquisition of `lock`.
+    // No other owner may release or downgrade it while this guard exists.
     lock: &'a R,
     _marker: PhantomData<R::GuardMarker>,
 }
 
 impl<R: RawRwLock> Drop for RwLockWriteGuardDetached<'_, R> {
     fn drop(&mut self) {
-        // Safety: An RwLockWriteGuardDetached always holds an exclusive lock.
+        // SAFETY: The lock field invariant provides the held exclusive
+        // acquisition owned by this guard. Drop consumes its sole unlock obligation.
         unsafe {
             self.lock.unlock_exclusive();
         }
@@ -72,19 +78,27 @@ impl<'a, R: RawRwLock> RwLockReadGuardDetached<'a, R> {
     ///
     /// # Safety
     ///
-    /// The returned `&'a T` must not be used after the returned guard is
-    /// dropped. In particular, the caller must not `mem::forget` the guard or
-    /// move it to a scope shorter than any borrow derived from the returned
-    /// reference. Misuse causes a use-after-unlock and is undefined behaviour.
+    /// The caller must ensure that every access through the returned reference
+    /// or a reference derived from it is protected by the shared acquisition
+    /// transferred to the returned guard. Such borrows must end before that
+    /// acquisition is released, including accesses made while unwinding.
+    ///
+    /// Forgetting the guard leaks the acquisition without unlocking it; this
+    /// does not itself violate the contract. It does not extend the lifetime
+    /// of the underlying lock or data beyond `'a`.
     pub unsafe fn detach_from<T>(guard: RwLockReadGuard<'a, R, T>) -> (Self, &'a T) {
         let rwlock = RwLockReadGuard::rwlock(&ManuallyDrop::new(guard));
 
-        // Safety: There will be no concurrent writes as we are "forgetting" the existing guard,
-        // with the safety assumption that the caller will not drop the new detached guard early.
+        // SAFETY: The original read guard holds the shared acquisition and
+        // ManuallyDrop prevents its destructor from releasing it. data_ptr()
+        // addresses the same initialized T protected by that acquisition.
+        // The caller keeps accesses through this reference protected until they
+        // end; the returned guard takes over the original unlock obligation.
         let data = unsafe { &*rwlock.data_ptr() };
         let guard = RwLockReadGuardDetached {
-            // Safety: We are imitating the original RwLockReadGuard. It's the callers
-            // responsibility to not drop the guard early.
+            // SAFETY: The original guard is disabled, so this field takes sole
+            // ownership of its held shared acquisition. All accesses through the
+            // paired data reference are covered by the caller's contract above.
             lock: unsafe { rwlock.raw() },
             _marker: PhantomData,
         };
@@ -101,19 +115,29 @@ impl<'a, R: RawRwLock> RwLockWriteGuardDetached<'a, R> {
     ///
     /// # Safety
     ///
-    /// The returned `&'a mut T` must not be used after the returned guard is
-    /// dropped. In particular, the caller must not `mem::forget` the guard or
-    /// move it to a scope shorter than any borrow derived from the returned
-    /// reference. Misuse causes a use-after-unlock and is undefined behaviour.
+    /// The caller must ensure that every access through the returned mutable
+    /// reference or a reference derived from it is protected by the exclusive
+    /// acquisition transferred to the returned guard. Such borrows must end
+    /// before that acquisition is released or downgraded, including accesses
+    /// made while unwinding. Before downgrading, a retained borrow may instead
+    /// be converted to a shared borrow under [`Self::downgrade`]'s contract.
+    ///
+    /// Forgetting the guard leaks the acquisition without unlocking it; this
+    /// does not itself violate the contract. It does not extend the lifetime
+    /// of the underlying lock or data beyond `'a`.
     pub unsafe fn detach_from<T>(guard: RwLockWriteGuard<'a, R, T>) -> (Self, &'a mut T) {
         let rwlock = RwLockWriteGuard::rwlock(&ManuallyDrop::new(guard));
 
-        // Safety: There will be no concurrent reads/writes as we are "forgetting" the existing guard,
-        // with the safety assumption that the caller will not drop the new detached guard early.
+        // SAFETY: The original write guard holds the exclusive acquisition and
+        // ManuallyDrop prevents its destructor from releasing it. data_ptr()
+        // addresses the same initialized T exclusively protected by that guard.
+        // The caller retains this protection for every access requiring the
+        // mutable borrow; the returned guard takes over the unlock obligation.
         let data = unsafe { &mut *rwlock.data_ptr() };
         let guard = RwLockWriteGuardDetached {
-            // Safety: We are imitating the original RwLockWriteGuard. It's the callers
-            // responsibility to not drop the guard early.
+            // SAFETY: The original guard is disabled, so this field takes sole
+            // ownership of its held exclusive acquisition. All accesses through
+            // the paired data reference are covered by the caller's contract.
             lock: unsafe { rwlock.raw() },
             _marker: PhantomData,
         };
@@ -127,18 +151,23 @@ impl<'a, R: RawRwLockDowngrade> RwLockWriteGuardDetached<'a, R> {
     ///
     /// # Safety
     ///
-    /// Any `&mut T` that was obtained alongside this write guard (typically
-    /// via [`RwLockWriteGuardDetached::detach_from`]) must not be used after
-    /// downgrading: once the lock is shared, other readers may observe the
-    /// data, so further mutation through the existing `&mut T` would alias
-    /// those readers and is undefined behaviour. Convert any retained
-    /// reference to an `&T` (or drop it) before calling this method.
+    /// The caller must end all exclusive borrows protected by this acquisition
+    /// before calling this method. Any retained view must already have been
+    /// converted to a shared borrow: other readers may acquire the lock as soon
+    /// as the raw downgrade occurs, before this method returns.
+    ///
+    /// Accesses through retained shared views must remain protected by the
+    /// returned shared guard, as in [`RwLockReadGuardDetached::detach_from`].
     pub unsafe fn downgrade(self) -> RwLockReadGuardDetached<'a, R> {
         // Do not drop the write guard - otherwise we will trigger a downgrade + unlock_exclusive,
         // which is incorrect
         let this = ManuallyDrop::new(self);
 
-        // Safety: An RwLockWriteGuardDetached always holds an exclusive lock.
+        // SAFETY: The lock field invariant supplies the held exclusive
+        // acquisition required by RawRwLockDowngrade::downgrade. ManuallyDrop
+        // disables its exclusive unlock, and the caller has ended exclusive
+        // borrows before readers can acquire the lock. The atomic downgrade
+        // leaves one shared acquisition, transferred to the returned guard.
         unsafe { this.lock.downgrade() }
         RwLockReadGuardDetached {
             lock: this.lock,
